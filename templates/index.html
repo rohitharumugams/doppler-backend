@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Professional Doppler Shift Simulator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 450px 1fr 350px;
+      gap: 30px;
+    }
+    .left-section {
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      height: fit-content;
+    }
+    .center-section {
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .right-section {
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      height: fit-content;
+    }
+    #pathCanvas {
+      border: 2px solid #333;
+      background-color: #f9f9f9;
+      border-radius: 8px;
+      width: 100%;
+      height: auto;
+      max-width: 100%;
+    }
+    .canvas-info {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+    input[type="number"], input[type="text"], textarea {
+      width: 80px;
+      margin: 2px;
+      padding: 4px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    textarea {
+      width: 100%;
+      height: 60px;
+      resize: vertical;
+      font-family: monospace;
+    }
+    select, input[type="submit"] {
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    select {
+      width: 100%;
+    }
+    input[type="submit"] {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 12px 24px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: bold;
+      width: 100%;
+      margin-top: 20px;
+    }
+    input[type="submit"]:hover {
+      background-color: #45a049;
+    }
+    input[type="submit"]:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .audio-controls {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f0f8ff;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid #e0e0e0;
+    }
+    .audio-controls button {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    .audio-controls button:hover {
+      background-color: #1976D2;
+    }
+    .audio-controls button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .download-button {
+      background-color: #FF9800 !important;
+    }
+    .download-button:hover {
+      background-color: #F57C00 !important;
+    }
+    .status-message {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 6px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .status-loading {
+      background-color: #E3F2FD;
+      color: #1976D2;
+      border: 1px solid #BBDEFB;
+    }
+    .status-playing {
+      background-color: #E8F5E8;
+      color: #388E3C;
+      border: 1px solid #C8E6C9;
+    }
+    .status-error {
+      background-color: #FFEBEE;
+      color: #D32F2F;
+      border: 1px solid #FFCDD2;
+    }
+    .method-section {
+      background-color: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .method-section h4 {
+      margin: 0 0 12px 0;
+      color: #856404;
+      font-size: 16px;
+    }
+    .method-info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+    .acceleration-section {
+      background-color: #e8f4fd;
+      border: 2px solid #2196F3;
+      border-radius: 8px;
+      padding: 18px;
+      margin: 20px 0;
+    }
+    .acceleration-section h4 {
+      margin: 0 0 15px 0;
+      color: #1976D2;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .preset-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .preset-btn {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background-color 0.2s;
+    }
+    .preset-btn:hover {
+      background-color: #1976D2;
+    }
+    .validation-message {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .validation-success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .validation-error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .form-group {
+      margin: 12px 0;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #333;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0;
+    }
+    .grid-2 .form-group {
+      margin: 0;
+    }
+    .hidden {
+      display: none !important;
+    }
+    @media (max-width: 1200px) {
+      .container {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+      .left-section, .right-section {
+        order: 2;
+      }
+      .center-section {
+        order: 1;
+      }
+    }
+  </style>
+  <script>
+    let currentAudio = null;
+    let animationId = null;
+    let currentAudioBlob = null;
+    let isPlaying = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let canvasStream = null;
+    
+    // Store actual speed profile data for animation
+    let currentSpeedProfile = null;
+    let animationStartTime = null;
+
+    // Preset manual profiles
+    const PRESET_PROFILES = {
+      "city_traffic": {
+        "name": "City Traffic (Stop & Go)",
+        "description": "Typical city driving with stops and acceleration",
+        "time_values": "0,2,4,6,8,10",
+        "speed_values": "0,25,10,30,5,20",
+        "duration": 10
+      },
+      "highway_cruise": {
+        "name": "Highway Cruise Control", 
+        "description": "Steady highway driving with minor variations",
+        "time_values": "0,1,5,9,10",
+        "speed_values": "25,30,28,32,30",
+        "duration": 10
+      },
+      "acceleration_test": {
+        "name": "Acceleration Test",
+        "description": "Gradual acceleration from stop to high speed",
+        "time_values": "0,2,5,8,10",
+        "speed_values": "5,15,35,50,55",
+        "duration": 10
+      },
+      "mountain_driving": {
+        "name": "Mountain Driving",
+        "description": "Uphill/downhill with varying speeds",
+        "time_values": "0,3,6,9,12,15",
+        "speed_values": "20,15,10,25,35,20",
+        "duration": 15
+      },
+      "racing_circuit": {
+        "name": "Racing Circuit",
+        "description": "High-speed racing with braking zones", 
+        "time_values": "0,1,3,5,7,8",
+        "speed_values": "40,60,30,70,35,50",
+        "duration": 8
+      }
+    };
+
+    function parseSpeedProfile(timeStr, speedStr, duration) {
+      try {
+        const timeValues = timeStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        const speedValues = speedStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        
+        if (timeValues.length !== speedValues.length || timeValues.length < 2) {
+          return null;
+        }
+        
+        // Ensure first point is at t=0 and last point is at duration
+        if (timeValues[0] > 0) {
+          timeValues.unshift(0);
+          speedValues.unshift(speedValues[0]);
+        }
+        
+        if (timeValues[timeValues.length - 1] < duration) {
+          timeValues.push(duration);
+          speedValues.push(speedValues[speedValues.length - 1]);
+        }
+        
+        // Create interpolation function
+        return function(t) {
+          if (t <= timeValues[0]) return speedValues[0];
+          if (t >= timeValues[timeValues.length - 1]) return speedValues[speedValues.length - 1];
+          
+          for (let i = 0; i < timeValues.length - 1; i++) {
+            if (t >= timeValues[i] && t <= timeValues[i + 1]) {
+              const ratio = (t - timeValues[i]) / (timeValues[i + 1] - timeValues[i]);
+              return speedValues[i] + ratio * (speedValues[i + 1] - speedValues[i]);
+            }
+          }
+          return speedValues[speedValues.length - 1];
+        };
+        
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function updateAccelerationMode() {
+      const mode = document.getElementById("acceleration_mode").value;
+      const customSection = document.getElementById("custom-accel-section");
+      const manualSection = document.getElementById("manual-profile-section");
+      
+      // Hide all sections first
+      customSection.classList.add("hidden");
+      manualSection.classList.add("hidden");
+      
+      // Clear any previous form values
+      clearAccelerationInputs();
+      
+      // Show the selected section
+      if (mode === "custom") {
+        customSection.classList.remove("hidden");
+      } else if (mode === "manual") {
+        manualSection.classList.remove("hidden");
+      }
+      
+      // Show/hide speed parameter based on mode
+      updateSpeedParameterVisibility();
+      updateDistance();
+      drawPath();
+    }
+
+    function updateSpeedParameterVisibility() {
+      const mode = document.getElementById("acceleration_mode").value;
+      const speedInputs = document.querySelectorAll('#param-fields input[name="speed"]');
+      const speedLabels = document.querySelectorAll('#param-fields label[for="speed"]');
+      
+      if (mode === "manual") {
+        // Hide speed inputs for manual mode
+        speedInputs.forEach(input => {
+          if (input && input.parentElement) {
+            input.parentElement.style.display = 'none';
+          }
+        });
+        speedLabels.forEach(label => {
+          if (label && label.parentElement) {
+            label.parentElement.style.display = 'none';
+          }
+        });
+      } else {
+        // Show speed inputs for other modes
+        speedInputs.forEach(input => {
+          if (input && input.parentElement) {
+            input.parentElement.style.display = 'block';
+          }
+        });
+        speedLabels.forEach(label => {
+          if (label && label.parentElement) {
+            label.parentElement.style.display = 'block';
+          }
+        });
+      }
+    }
+
+    function clearAccelerationInputs() {
+      // Clear custom acceleration inputs
+      const customInputs = ['max_acceleration', 'max_deceleration', 'acceleration_frequency', 
+                           'acceleration_strength', 'gear_change_frequency', 'engine_roughness'];
+      customInputs.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.value = "";
+      });
+      
+      // Clear manual profile inputs
+      const manualTimeElement = document.getElementById("manual_time_values");
+      const manualSpeedElement = document.getElementById("manual_speed_values");
+      if (manualTimeElement) manualTimeElement.value = "";
+      if (manualSpeedElement) manualSpeedElement.value = "";
+      
+      // Clear validation messages
+      const validationDiv = document.getElementById("manual-validation");
+      if (validationDiv) {
+        validationDiv.classList.add("hidden");
+      }
+      
+      // Clear current speed profile
+      currentSpeedProfile = null;
+    }
+
+    function loadPresetProfile(presetName) {
+      const preset = PRESET_PROFILES[presetName];
+      if (preset) {
+        const timeElement = document.getElementById("manual_time_values");
+        const speedElement = document.getElementById("manual_speed_values");
+        const durationElement = document.getElementById("audio_duration");
+        
+        if (timeElement) timeElement.value = preset.time_values;
+        if (speedElement) speedElement.value = preset.speed_values;
+        if (durationElement) durationElement.value = preset.duration;
+        
+        validateManualProfile();
+        updateDistance();
+        drawPath();
+      }
+    }
+
+    function validateManualProfile() {
+      const timeElement = document.getElementById("manual_time_values");
+      const speedElement = document.getElementById("manual_speed_values");
+      const validationDiv = document.getElementById("manual-validation");
+      const durationElement = document.getElementById("audio_duration");
+      
+      if (!timeElement || !speedElement || !validationDiv || !durationElement) return false;
+      
+      const timeStr = timeElement.value;
+      const speedStr = speedElement.value;
+      const duration = parseFloat(durationElement.value) || 5;
+      
+      if (!timeStr || !speedStr) {
+        validationDiv.classList.add("hidden");
+        currentSpeedProfile = null;
+        return false;
+      }
+      
+      try {
+        const timeValues = timeStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        const speedValues = speedStr.split(',').map(x => parseFloat(x.trim())).filter(x => !isNaN(x));
+        
+        if (timeValues.length !== speedValues.length) {
+          showValidationMessage("Number of time and speed values must match", "error");
+          currentSpeedProfile = null;
+          return false;
+        }
+        
+        if (timeValues.length < 2) {
+          showValidationMessage("Need at least 2 time/speed points", "error");
+          currentSpeedProfile = null;
+          return false;
+        }
+        
+        if (timeValues.some(t => t < 0)) {
+          showValidationMessage("Time values cannot be negative", "error");
+          currentSpeedProfile = null;
+          return false;
+        }
+        
+        if (speedValues.some(s => s <= 0)) {
+          showValidationMessage("Speed values must be positive", "error");
+          currentSpeedProfile = null;
+          return false;
+        }
+        
+        // Check if times are roughly in order
+        const sortedTimes = [...timeValues].sort((a, b) => a - b);
+        const isMonotonic = JSON.stringify(timeValues) === JSON.stringify(sortedTimes);
+        
+        if (!isMonotonic) {
+          showValidationMessage("Time values should be in ascending order", "error");
+          currentSpeedProfile = null;
+          return false;
+        }
+        
+        // Create speed profile function
+        currentSpeedProfile = parseSpeedProfile(timeStr, speedStr, duration);
+        
+        showValidationMessage(`Valid profile: ${timeValues.length} points, max speed: ${Math.max(...speedValues)} m/s`, "success");
+        return true;
+        
+      } catch (error) {
+        showValidationMessage("Invalid number format in time or speed values", "error");
+        currentSpeedProfile = null;
+        return false;
+      }
+    }
+
+    function showValidationMessage(message, type) {
+      const validationDiv = document.getElementById("manual-validation");
+      if (validationDiv) {
+        validationDiv.textContent = message;
+        validationDiv.className = `validation-message validation-${type}`;
+        validationDiv.classList.remove("hidden");
+      }
+    }
+
+    function showParams() {
+      const path = document.getElementById("path").value;
+      const fields = document.getElementById("param-fields");
+      const distanceInfo = document.getElementById("distance-info");
+      
+      if (!fields || !distanceInfo) return;
+      
+      fields.innerHTML = "";
+      distanceInfo.innerHTML = "";
+
+      if (path === "straight") {
+        fields.innerHTML = `
+          <div class="form-group">
+            <label for="speed">Speed (m/s):</label>
+            <input name="speed" type="number" id="speed" step="0.1" value="20" oninput="updateDistance(); drawPath()">
+          </div>
+          <div class="form-group">
+            <label for="h">Height h (m):</label>
+            <input name="h" type="number" id="h" step="0.1" value="10" oninput="updateDistance(); drawPath()">
+          </div>
+          <div class="form-group">
+            <label for="angle">Angle (degrees):</label>
+            <input name="angle" type="number" id="angle" step="1" value="0" oninput="updateDistance(); drawPath()">
+          </div>
+        `;
+      } else if (path === "parabola") {
+        fields.innerHTML = `
+          <div class="form-group">
+            <label for="speed">Speed (m/s):</label>
+            <input name="speed" type="number" id="speed" step="0.1" value="15" oninput="updateDistance(); drawPath()">
+          </div>
+          <div class="form-group">
+            <label for="a">Curvature a:</label>
+            <input name="a" type="number" id="a" step="0.01" value="0.1" oninput="drawPath()">
+          </div>
+          <div class="form-group">
+            <label for="h">Height h (m):</label>
+            <input name="h" type="number" id="h" step="0.1" value="10" oninput="drawPath()">
+          </div>
+        `;
+      } else if (path === "bezier") {
+        fields.innerHTML = `
+          <div class="form-group">
+            <label for="speed">Speed (m/s):</label>
+            <input name="speed" type="number" id="speed" step="0.1" value="20" oninput="updateDistance(); drawPath()">
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>P0 (Start):</label>
+              <input name="x0" type="number" id="x0" step="0.1" value="-30" oninput="drawPath()" placeholder="x0">
+              <input name="y0" type="number" id="y0" step="0.1" value="20" oninput="drawPath()" placeholder="y0">
+            </div>
+            <div class="form-group">
+              <label>P1 (Control):</label>
+              <input name="x1" type="number" id="x1" step="0.1" value="-10" oninput="drawPath()" placeholder="x1">
+              <input name="y1" type="number" id="y1" step="0.1" value="5" oninput="drawPath()" placeholder="y1">
+            </div>
+            <div class="form-group">
+              <label>P2 (Control):</label>
+              <input name="x2" type="number" id="x2" step="0.1" value="10" oninput="drawPath()" placeholder="x2">
+              <input name="y2" type="number" id="y2" step="0.1" value="5" oninput="drawPath()" placeholder="y2">
+            </div>
+            <div class="form-group">
+              <label>P3 (End):</label>
+              <input name="x3" type="number" id="x3" step="0.1" value="30" oninput="drawPath()" placeholder="x3">
+              <input name="y3" type="number" id="y3" step="0.1" value="20" oninput="drawPath()" placeholder="y3">
+            </div>
+          </div>
+        `;
+      }
+      updateSpeedParameterVisibility();
+      updateDistance();
+      drawPath();
+    }
+
+    function updateDistance() {
+      const durationElement = document.getElementById("audio_duration");
+      const distanceElement = document.getElementById("distance-info");
+      const pathElement = document.getElementById("path");
+      const modeElement = document.getElementById("acceleration_mode");
+      
+      if (!durationElement || !distanceElement || !pathElement || !modeElement) return;
+      
+      const duration = parseFloat(durationElement.value) || 5;
+      const path = pathElement.value;
+      const mode = modeElement.value;
+      
+      // Add acceleration mode info to distance display
+      let modeInfo = '';
+      if (mode === 'custom') {
+        modeInfo = ' | Custom Acceleration';
+      } else if (mode === 'manual') {
+        modeInfo = ' | Manual Profile';
+      } else {
+        modeInfo = ' | Perfect Physics';
+      }
+      
+      let dist = '';
+      
+      if (mode === 'manual') {
+        // For manual mode, calculate distance based on speed profile
+        if (currentSpeedProfile) {
+          // Estimate total distance by integrating speed profile
+          const steps = 100;
+          let totalDistance = 0;
+          for (let i = 0; i < steps; i++) {
+            const t = (i / steps) * duration;
+            const speed = currentSpeedProfile(t);
+            totalDistance += speed * (duration / steps);
+          }
+          
+          const minSpeed = Math.min(...Array.from({length: steps}, (_, i) => currentSpeedProfile((i / steps) * duration)));
+          const maxSpeed = Math.max(...Array.from({length: steps}, (_, i) => currentSpeedProfile((i / steps) * duration)));
+          
+          dist = `Duration: ${duration} s | Distance: ~${totalDistance.toFixed(1)} m | Speed: ${minSpeed.toFixed(1)}-${maxSpeed.toFixed(1)} m/s${modeInfo}`;
+        } else {
+          dist = `Duration: ${duration} s | Manual Speed Profile${modeInfo}`;
+        }
+      } else {
+        if (path === "straight") {
+          const speedElement = document.getElementById("speed");
+          const angleElement = document.getElementById("angle");
+          const speed = speedElement ? parseFloat(speedElement.value) : 20;
+          const angle = angleElement ? parseFloat(angleElement.value) || 0 : 0;
+          
+          if (!isNaN(speed)) {
+            const totalDistance = speed * duration;
+            const halfDistance = totalDistance / 2;
+            
+            if (Math.abs(angle) >= 89.9) {
+              dist = `Total distance: ${totalDistance.toFixed(1)} m (nearly vertical motion)${modeInfo}`;
+            } else {
+              dist = `Total distance: ${totalDistance.toFixed(1)} m (±${halfDistance.toFixed(1)} m from center)${modeInfo}`;
+            }
+          }
+        } else if (path === "parabola") {
+          const speedElement = document.getElementById("speed");
+          const speed = speedElement ? parseFloat(speedElement.value) : 15;
+          if (!isNaN(speed)) {
+            const totalDistance = speed * duration;
+            const halfDistance = totalDistance / 2;
+            dist = `Total distance: ${totalDistance.toFixed(1)} m (±${halfDistance.toFixed(1)} m from center)${modeInfo}`;
+          }
+        } else if (path === "bezier") {
+          const speedElement = document.getElementById("speed");
+          const speed = speedElement ? parseFloat(speedElement.value) : 20;
+          if (!isNaN(speed)) {
+            const totalDistance = speed * duration;
+            dist = `Speed: ${speed} m/s, Duration: ${duration} s, Distance: ${totalDistance.toFixed(1)} m${modeInfo}`;
+          } else {
+            dist = `Duration: ${duration} s (set speed to calculate distance)${modeInfo}`;
+          }
+        }
+      }
+      
+      distanceElement.innerHTML = dist;
+    }
+
+    function drawPath(animationProgress = null) {
+      const canvas = document.getElementById("pathCanvas");
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      
+      // Clear canvas with white background
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      
+      // Set up coordinate system
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const scale = 2;
+      
+      // Draw major axes
+      ctx.strokeStyle = "#333";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(width, centerY);
+      ctx.moveTo(centerX, 0);
+      ctx.lineTo(centerX, height);
+      ctx.stroke();
+      
+      // Draw grid
+      ctx.strokeStyle = "#ccc";
+      ctx.lineWidth = 1;
+      for (let i = -200; i <= 200; i += 20) {
+        if (i !== 0) {
+          if (centerX + i * scale >= 0 && centerX + i * scale <= width) {
+            ctx.beginPath();
+            ctx.moveTo(centerX + i * scale, 0);
+            ctx.lineTo(centerX + i * scale, height);
+            ctx.stroke();
+          }
+          
+          if (centerY - i * scale >= 0 && centerY - i * scale <= height) {
+            ctx.beginPath();
+            ctx.moveTo(0, centerY - i * scale);
+            ctx.lineTo(width, centerY - i * scale);
+            ctx.stroke();
+          }
+        }
+      }
+      
+      // Add axis labels
+      ctx.fillStyle = "#666";
+      ctx.font = "10px Arial";
+      ctx.textAlign = "center";
+      
+      for (let i = -180; i <= 180; i += 60) {
+        if (i !== 0) {
+          const x = centerX + i * scale;
+          if (x >= 0 && x <= width) {
+            ctx.fillText(i.toString(), x, centerY + 15);
+          }
+        }
+      }
+      
+      ctx.textAlign = "right";
+      for (let i = -180; i <= 180; i += 60) {
+        if (i !== 0) {
+          const y = centerY - i * scale;
+          if (y >= 15 && y <= height - 5) {
+            ctx.fillText(i.toString(), centerX - 5, y + 3);
+          }
+        }
+      }
+      
+      ctx.textAlign = "left";
+      ctx.fillText("0", centerX + 3, centerY + 12);
+      
+      // Draw observer
+      ctx.fillStyle = "#ff0000";
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = "#000";
+      ctx.font = "12px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText("Observer", centerX + 10, centerY + 5);
+      
+      const pathElement = document.getElementById("path");
+      const durationElement = document.getElementById("audio_duration");
+      const modeElement = document.getElementById("acceleration_mode");
+      
+      if (!pathElement || !durationElement || !modeElement) return;
+      
+      const path = pathElement.value;
+      const duration = parseFloat(durationElement.value) || 5;
+      const mode = modeElement.value;
+      
+      let currentX = 0, currentY = 0;
+      let currentDistance = 0, currentVelocity = 0, radialVelocity = 0;
+      let currentTime = 0;
+      
+      if (animationProgress !== null) {
+        currentTime = animationProgress * duration;
+      }
+      
+      // Draw path based on type
+      if (path === "straight") {
+        const speedElement = document.getElementById("speed");
+        const hElement = document.getElementById("h");
+        const angleElement = document.getElementById("angle");
+        
+        const baseSpeed = speedElement ? parseFloat(speedElement.value) || 20 : 20;
+        const h = hElement ? parseFloat(hElement.value) || 10 : 10;
+        const angle = angleElement ? parseFloat(angleElement.value) || 0 : 0;
+        
+        const halfTime = duration / 2;
+        const angleRad = angle * Math.PI / 180;
+        const slope = Math.tan(angleRad);
+        
+        let closestX, closestY;
+        if (Math.abs(angle) < 0.1) {
+          closestX = 0;
+          closestY = h;
+        } else {
+          const c = h * Math.sqrt(1 + slope * slope);
+          closestX = -slope * c / (1 + slope * slope);
+          closestY = c / (1 + slope * slope);
+        }
+        
+        // Calculate position based on mode
+        let startX, endX, startY, endY;
+        
+        if (mode === 'manual' && currentSpeedProfile) {
+          // For manual mode, integrate speed over time to get position
+          let totalDistance = 0;
+          const steps = 100;
+          for (let i = 0; i < steps; i++) {
+            const t = (i / steps) * duration;
+            const speed = currentSpeedProfile(t);
+            totalDistance += speed * (duration / steps);
+          }
+          
+          const halfDistance = totalDistance / 2;
+          const vx_dir = Math.cos(angleRad);
+          
+          startX = closestX - vx_dir * halfDistance;
+          endX = closestX + vx_dir * halfDistance;
+          startY = closestY + slope * (-vx_dir * halfDistance);
+          endY = closestY + slope * (vx_dir * halfDistance);
+          
+          if (animationProgress !== null) {
+            // Calculate current position by integrating speed profile
+            let distanceTraveled = 0;
+            const animSteps = Math.floor(animationProgress * 100);
+            for (let i = 0; i < animSteps; i++) {
+              const t = (i / 100) * duration;
+              const speed = currentSpeedProfile(t);
+              distanceTraveled += speed * (duration / 100);
+            }
+            
+            const progressDistance = distanceTraveled - halfDistance;
+            currentX = closestX + vx_dir * progressDistance;
+            currentY = closestY + slope * (vx_dir * progressDistance);
+            
+            // Get current speed from profile
+            currentVelocity = currentSpeedProfile(currentTime);
+            
+            // Calculate radial velocity
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            const vx_current = currentVelocity * Math.cos(angleRad);
+            const vy_current = currentVelocity * Math.sin(angleRad);
+            if (currentDistance > 0) {
+              radialVelocity = (vx_current * currentX + vy_current * currentY) / currentDistance;
+            }
+          }
+        } else {
+          // Perfect physics or custom mode with constant speed
+          const vx = baseSpeed * Math.cos(angleRad);
+          
+          startX = closestX - vx * halfTime;
+          endX = closestX + vx * halfTime;
+          startY = closestY + slope * (-vx * halfTime);
+          endY = closestY + slope * (vx * halfTime);
+          
+          if (animationProgress !== null) {
+            currentX = startX + (endX - startX) * animationProgress;
+            currentY = startY + (endY - startY) * animationProgress;
+            
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            currentVelocity = baseSpeed;
+            
+            const vx_current = baseSpeed * Math.cos(angleRad);
+            const vy_current = baseSpeed * Math.sin(angleRad);
+            if (currentDistance > 0) {
+              radialVelocity = (vx_current * currentX + vy_current * currentY) / currentDistance;
+            }
+          }
+        }
+        
+        // Draw path line
+        ctx.strokeStyle = "#0066cc";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(centerX + startX * scale, centerY - startY * scale);
+        ctx.lineTo(centerX + endX * scale, centerY - endY * scale);
+        ctx.stroke();
+        
+        // Draw start and end points
+        ctx.fillStyle = "#00aa00";
+        ctx.beginPath();
+        ctx.arc(centerX + startX * scale, centerY - startY * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = "#aa0000";
+        ctx.beginPath();
+        ctx.arc(centerX + endX * scale, centerY - endY * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Draw perpendicular distance line
+        ctx.strokeStyle = "#ff6600";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + closestX * scale, centerY - closestY * scale);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Labels
+        ctx.fillStyle = "#000";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Start", centerX + startX * scale, centerY - startY * scale - 10);
+        ctx.fillText("End", centerX + endX * scale, centerY - endY * scale - 10);
+        ctx.textAlign = "left";
+        ctx.fillText(`h=${h}m`, centerX + closestX * scale / 2 + 5, centerY - closestY * scale / 2);
+      }
+      
+      else if (path === "parabola") {
+        const speedElement = document.getElementById("speed");
+        const aElement = document.getElementById("a");
+        const hElement = document.getElementById("h");
+        
+        const baseSpeed = speedElement ? parseFloat(speedElement.value) || 15 : 15;
+        const a = aElement ? parseFloat(aElement.value) || 0.1 : 0.1;
+        const h = hElement ? parseFloat(hElement.value) || 10 : 10;
+        
+        let startX, endX;
+        
+        if (mode === 'manual' && currentSpeedProfile) {
+          // Calculate total distance for manual mode
+          let totalDistance = 0;
+          const steps = 100;
+          for (let i = 0; i < steps; i++) {
+            const t = (i / steps) * duration;
+            const speed = currentSpeedProfile(t);
+            totalDistance += speed * (duration / steps);
+          }
+          
+          const halfDistance = totalDistance / 2;
+          startX = -halfDistance;
+          endX = halfDistance;
+          
+          if (animationProgress !== null) {
+            // Calculate current position by integrating speed profile
+            let distanceTraveled = 0;
+            const animSteps = Math.floor(animationProgress * 100);
+            for (let i = 0; i < animSteps; i++) {
+              const t = (i / 100) * duration;
+              const speed = currentSpeedProfile(t);
+              distanceTraveled += speed * (duration / 100);
+            }
+            
+            currentX = startX + distanceTraveled;
+            currentY = a * currentX * currentX + h;
+            
+            // Get current speed from profile
+            currentVelocity = currentSpeedProfile(currentTime);
+            
+            // Calculate components for parabola
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            const vx_current = currentVelocity;
+            const vy_current = 2 * a * currentX * currentVelocity;
+            if (currentDistance > 0) {
+              radialVelocity = (vx_current * currentX + vy_current * currentY) / currentDistance;
+            }
+          }
+        } else {
+          // Perfect physics mode
+          const halfTime = duration / 2;
+          startX = -baseSpeed * halfTime;
+          endX = baseSpeed * halfTime;
+          
+          if (animationProgress !== null) {
+            currentX = startX + (endX - startX) * animationProgress;
+            currentY = a * currentX * currentX + h;
+            
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            currentVelocity = Math.sqrt(baseSpeed * baseSpeed + (2 * a * currentX * baseSpeed) * (2 * a * currentX * baseSpeed));
+            
+            const vx_current = baseSpeed;
+            const vy_current = 2 * a * currentX * baseSpeed;
+            if (currentDistance > 0) {
+              radialVelocity = (vx_current * currentX + vy_current * currentY) / currentDistance;
+            }
+          }
+        }
+        
+        // Draw parabola path
+        ctx.strokeStyle = "#0066cc";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        
+        let firstPoint = true;
+        for (let x = startX; x <= endX; x += 0.5) {
+          const y = a * x * x + h;
+          const canvasX = centerX + x * scale;
+          const canvasY = centerY - y * scale;
+          
+          if (canvasX >= 0 && canvasX <= width && canvasY >= 0 && canvasY <= height) {
+            if (firstPoint) {
+              ctx.moveTo(canvasX, canvasY);
+              firstPoint = false;
+            } else {
+              ctx.lineTo(canvasX, canvasY);
+            }
+          }
+        }
+        ctx.stroke();
+        
+        // Draw start and end points
+        const startY = a * startX * startX + h;
+        const endY = a * endX * endX + h;
+        
+        ctx.fillStyle = "#00aa00";
+        ctx.beginPath();
+        ctx.arc(centerX + startX * scale, centerY - startY * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = "#aa0000";
+        ctx.beginPath();
+        ctx.arc(centerX + endX * scale, centerY - endY * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      
+      else if (path === "bezier") {
+        const speedElement = document.getElementById("speed");
+        const x0 = parseFloat(document.getElementById("x0")?.value) || -30;
+        const x1 = parseFloat(document.getElementById("x1")?.value) || -10;
+        const x2 = parseFloat(document.getElementById("x2")?.value) || 10;
+        const x3 = parseFloat(document.getElementById("x3")?.value) || 30;
+        const y0 = parseFloat(document.getElementById("y0")?.value) || 20;
+        const y1 = parseFloat(document.getElementById("y1")?.value) || 5;
+        const y2 = parseFloat(document.getElementById("y2")?.value) || 5;
+        const y3 = parseFloat(document.getElementById("y3")?.value) || 20;
+        const baseSpeed = speedElement ? parseFloat(speedElement.value) || 20 : 20;
+        
+        // Draw Bezier curve
+        ctx.strokeStyle = "#0066cc";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        
+        let firstPoint = true;
+        for (let t = 0; t <= 1; t += 0.01) {
+          const x = (1-t)*(1-t)*(1-t)*x0 + 3*(1-t)*(1-t)*t*x1 + 3*(1-t)*t*t*x2 + t*t*t*x3;
+          const y = (1-t)*(1-t)*(1-t)*y0 + 3*(1-t)*(1-t)*t*y1 + 3*(1-t)*t*t*y2 + t*t*t*y3;
+          
+          const canvasX = centerX + x * scale;
+          const canvasY = centerY - y * scale;
+          
+          if (firstPoint) {
+            ctx.moveTo(canvasX, canvasY);
+            firstPoint = false;
+          } else {
+            ctx.lineTo(canvasX, canvasY);
+          }
+        }
+        ctx.stroke();
+        
+        // Draw control points
+        ctx.fillStyle = "#00aa00";
+        ctx.beginPath();
+        ctx.arc(centerX + x0 * scale, centerY - y0 * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = "#aa0000";
+        ctx.beginPath();
+        ctx.arc(centerX + x3 * scale, centerY - y3 * scale, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        if (animationProgress !== null) {
+          if (mode === 'manual' && currentSpeedProfile) {
+            // For manual mode, we need to map time to curve parameter based on integrated speed
+            // This is complex, so we'll use a simplified approach
+            const t = animationProgress; // Simplified mapping
+            currentX = (1-t)*(1-t)*(1-t)*x0 + 3*(1-t)*(1-t)*t*x1 + 3*(1-t)*t*t*x2 + t*t*t*x3;
+            currentY = (1-t)*(1-t)*(1-t)*y0 + 3*(1-t)*(1-t)*t*y1 + 3*(1-t)*t*t*y2 + t*t*t*y3;
+            
+            currentVelocity = currentSpeedProfile(currentTime);
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            
+            // Approximate radial velocity for Bezier with manual profile
+            const dx_dt = 3*(1-t)*(1-t)*(x1-x0) + 6*(1-t)*t*(x2-x1) + 3*t*t*(x3-x2);
+            const dy_dt = 3*(1-t)*(1-t)*(y1-y0) + 6*(1-t)*t*(y2-y1) + 3*t*t*(y3-y2);
+            const param_speed = Math.sqrt(dx_dt * dx_dt + dy_dt * dy_dt);
+            
+            if (param_speed > 0 && currentDistance > 0) {
+              const scale_factor = currentVelocity / param_speed;
+              const vx_current = dx_dt * scale_factor;
+              const vy_current = dy_dt * scale_factor;
+              radialVelocity = (vx_current * currentX + vy_current * currentY) / currentDistance;
+            }
+          } else {
+            // Perfect physics mode
+            const t = animationProgress;
+            currentX = (1-t)*(1-t)*(1-t)*x0 + 3*(1-t)*(1-t)*t*x1 + 3*(1-t)*t*t*x2 + t*t*t*x3;
+            currentY = (1-t)*(1-t)*(1-t)*y0 + 3*(1-t)*(1-t)*t*y1 + 3*(1-t)*t*t*y2 + t*t*t*y3;
+            
+            const dx_dt = 3*(1-t)*(1-t)*(x1-x0) + 6*(1-t)*t*(x2-x1) + 3*t*t*(x3-x2);
+            const dy_dt = 3*(1-t)*(1-t)*(y1-y0) + 6*(1-t)*t*(y2-y1) + 3*t*t*(y3-y2);
+            
+            currentDistance = Math.sqrt(currentX * currentX + currentY * currentY);
+            currentVelocity = Math.sqrt(dx_dt * dx_dt + dy_dt * dy_dt) * baseSpeed / 20;
+            
+            if (currentDistance > 0) {
+              radialVelocity = (dx_dt * currentX + dy_dt * currentY) / currentDistance * baseSpeed / 20;
+            }
+          }
+        }
+      }
+      
+      // Draw animated dot if animation is active
+      if (animationProgress !== null) {
+        // Draw distance line to moving source
+        ctx.strokeStyle = "#ff6600";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + currentX * scale, centerY - currentY * scale);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw moving source
+        ctx.fillStyle = "#FF1493";
+        ctx.beginPath();
+        ctx.arc(centerX + currentX * scale, centerY - currentY * scale, 8, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        // Add glow effect
+        ctx.shadowColor = "#FF1493";
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = "#FFFFFF";
+        ctx.beginPath();
+        ctx.arc(centerX + currentX * scale, centerY - currentY * scale, 4, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        // Live data display above the moving dot
+        const dotX = centerX + currentX * scale;
+        const dotY = centerY - currentY * scale;
+        
+        // Create background for text
+        const textPadding = 8;
+        const lineHeight = 14;
+        const textWidth = 160;
+        const textHeight = lineHeight * 5 + textPadding * 2;
+        
+        // Position text box to avoid going off canvas
+        let textBoxX = dotX - textWidth / 2;
+        let textBoxY = dotY - textHeight - 25;
+        
+        // Adjust if going off canvas
+        if (textBoxX < 5) textBoxX = 5;
+        if (textBoxX + textWidth > width - 5) textBoxX = width - textWidth - 5;
+        if (textBoxY < 5) textBoxY = dotY + 25;
+        
+        // Draw semi-transparent background
+        ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+        ctx.fillRect(textBoxX, textBoxY, textWidth, textHeight);
+        
+        // Draw border
+        ctx.strokeStyle = "#FFD700";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(textBoxX, textBoxY, textWidth, textHeight);
+        
+        // Display live data
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "12px Arial";
+        ctx.textAlign = "left";
+        
+        const textStartX = textBoxX + textPadding;
+        const textStartY = textBoxY + textPadding + 12;
+        
+        ctx.fillText(`Time: ${currentTime.toFixed(1)} s`, textStartX, textStartY);
+        ctx.fillText(`Distance: ${currentDistance.toFixed(1)} m`, textStartX, textStartY + lineHeight);
+        ctx.fillText(`Speed: ${currentVelocity.toFixed(1)} m/s`, textStartX, textStartY + lineHeight * 2);
+        ctx.fillText(`Radial V: ${radialVelocity.toFixed(1)} m/s`, textStartX, textStartY + lineHeight * 3);
+        
+        // Calculate frequency shift
+        const c = 343; // Speed of sound
+        const freqRatio = c / (c - radialVelocity);
+        const freqShiftPercent = ((freqRatio - 1) * 100);
+        ctx.fillText(`Freq: ${freqShiftPercent >= 0 ? '+' : ''}${freqShiftPercent.toFixed(1)}%`, textStartX, textStartY + lineHeight * 4);
+        
+        // Add arrow pointing to source
+        ctx.strokeStyle = "#FFD700";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(textBoxX + textWidth / 2, textBoxY + textHeight);
+        ctx.lineTo(dotX, dotY - 12);
+        ctx.stroke();
+        
+        // Arrow head
+        const arrowSize = 4;
+        ctx.fillStyle = "#FFD700";
+        ctx.beginPath();
+        ctx.moveTo(dotX, dotY - 12);
+        ctx.lineTo(dotX - arrowSize, dotY - 12 - arrowSize);
+        ctx.lineTo(dotX + arrowSize, dotY - 12 - arrowSize);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Source label
+        ctx.fillStyle = "#000";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("Source", dotX, dotY + 20);
+      }
+      
+      // Add legend
+      ctx.fillStyle = "#000";
+      ctx.font = "10px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText("Observer (red)", 10, 20);
+      ctx.fillText("Start (green)", 10, 35);
+      ctx.fillText("End (red)", 10, 50);
+      ctx.fillText("Path (blue)", 10, 65);
+      ctx.fillText("Distance (orange)", 10, 80);
+      if (animationProgress !== null) {
+        ctx.fillText("Live Data (yellow box)", 10, 95);
+        ctx.fillText("Moving Source", 10, 110);
+      }
+      
+      // Add coordinate range info
+      ctx.fillStyle = "#666";
+      ctx.font = "9px Arial";
+      ctx.textAlign = "right";
+      ctx.fillText("Range: ±200m", width - 10, 15);
+      ctx.fillText("Grid: 20m", width - 10, 27);
+    }
+
+    function animateSource(duration) {
+      animationStartTime = Date.now();
+      
+      function animate() {
+        const elapsed = Date.now() - animationStartTime;
+        const progress = Math.min(elapsed / (duration * 1000), 1);
+        
+        drawPath(progress);
+        
+        if (progress < 1 && isPlaying) {
+          animationId = requestAnimationFrame(animate);
+        } else {
+          animationId = null;
+          if (isPlaying) {
+            setTimeout(() => {
+              drawPath();
+              showStatusMessage("Simulation completed!", "status-playing");
+              setTimeout(() => hideStatusMessage(), 2000);
+            }, 100);
+          }
+        }
+      }
+      
+      animate();
+    }
+
+    async function handleFormSubmit(event) {
+      event.preventDefault();
+      
+      if (isPlaying) {
+        stopPlayback();
+        return;
+      }
+      
+      // Validate inputs based on acceleration mode
+      const modeElement = document.getElementById("acceleration_mode");
+      if (!modeElement) return;
+      
+      const mode = modeElement.value;
+      
+      if (mode === "manual") {
+        if (!validateManualProfile()) {
+          showStatusMessage("Please fix manual profile errors before simulating", "status-error");
+          setTimeout(() => hideStatusMessage(), 3000);
+          return;
+        }
+      }
+      
+      const formData = new FormData(event.target);
+      
+      // Add acceleration mode to form data
+      formData.append('acceleration_mode', mode);
+      
+      // Add manual profile data if in manual mode
+      if (mode === "manual") {
+        const timeElement = document.getElementById("manual_time_values");
+        const speedElement = document.getElementById("manual_speed_values");
+        if (timeElement && speedElement) {
+          formData.append('manual_time_values', timeElement.value);
+          formData.append('manual_speed_values', speedElement.value);
+        }
+      }
+      
+      const submitButton = document.querySelector('input[type="submit"]');
+      if (!submitButton) return;
+      
+      submitButton.disabled = true;
+      submitButton.value = "Generating Audio...";
+      showStatusMessage("Generating Doppler audio simulation...", "status-loading");
+      
+      try {
+        const response = await fetch('/simulate', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const audioBlob = await response.blob();
+        currentAudioBlob = audioBlob;
+        
+        currentAudio = new Audio(URL.createObjectURL(audioBlob));
+        currentAudio.addEventListener('loadeddata', () => {
+          isPlaying = true;
+          currentAudio.play();
+          const audioDuration = currentAudio.duration || 3;
+          animateSource(audioDuration);
+
+          const formatSelect = document.getElementById('format-select');
+          if (formatSelect && formatSelect.value === 'mp4') {
+            startVideoRecording();
+          }
+          
+          submitButton.value = "Stop Playback";
+          submitButton.disabled = false;
+          showStatusMessage("Playing Doppler simulation...", "status-playing");
+          showAudioControls();
+        });
+        
+        currentAudio.addEventListener('ended', async () => {
+          if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            await stopVideoRecording();
+          }
+          stopPlayback();
+        });
+        
+        currentAudio.addEventListener('error', (e) => {
+          console.error('Audio playback error:', e);
+          showStatusMessage("Audio playback error occurred", "status-error");
+          stopPlayback();
+        });
+        
+      } catch (error) {
+        console.error('Error:', error);
+        showStatusMessage(`Error: ${error.message}`, "status-error");
+        submitButton.disabled = false;
+        submitButton.value = "Simulate Doppler Audio";
+        setTimeout(() => hideStatusMessage(), 5000);
+      }
+    }
+
+    function stopPlayback() {
+      isPlaying = false;
+      
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      }
+      
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          stopVideoRecording();
+        }
+        animationId = null;
+      }
+      
+      drawPath();
+      
+      const submitButton = document.querySelector('input[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.value = "Simulate Doppler Audio";
+      }
+      
+      hideStatusMessage();
+    }
+
+    function showAudioControls() {
+      let controlsDiv = document.getElementById('audio-controls');
+      if (!controlsDiv) {
+        controlsDiv = document.createElement('div');
+        controlsDiv.id = 'audio-controls';
+        controlsDiv.className = 'audio-controls';
+        const rightSection = document.querySelector('.right-section');
+        if (rightSection) {
+          rightSection.appendChild(controlsDiv);
+        }
+      }
+      
+      controlsDiv.innerHTML = `
+        <div style="margin-bottom: 10px;">
+          <label for="filename-input">Filename: </label>
+          <input type="text" id="filename-input" placeholder="doppler_simulation" style="width: 140px; padding: 3px;">
+          <select id="format-select" style="margin-left: 5px; padding: 3px;">
+            <option value="mp3">MP3 (Audio Only)</option>
+            <option value="mp4">MP4 (Video + Audio)</option>
+          </select>
+        </div>
+        <button onclick="downloadAudio()" class="download-button">Download</button>
+        <button onclick="downloadAudio(true)" class="download-button" style="background-color: #9E9E9E !important;">Download (Default Name)</button>
+        <button onclick="replayAudio()">Replay</button>
+      `;
+      controlsDiv.style.display = 'block';
+    }
+
+    async function downloadAudio(useDefault = false) {
+      const formatSelect = document.getElementById('format-select');
+      const format = formatSelect ? formatSelect.value : 'mp3';
+      
+      let filename;
+      
+      if (useDefault) {
+        filename = `doppler_simulation.${format}`;
+      } else {
+        const filenameInput = document.getElementById('filename-input');
+        let customName = filenameInput ? filenameInput.value.trim() : '';
+        
+        if (!customName) {
+          customName = 'doppler_simulation';
+        }
+        
+        customName = customName.replace(/\.(mp3|mp4|wav)$/i, '');
+        filename = `${customName}.${format}`;
+      }
+      
+      let blobToDownload;
+      
+      if (format === 'mp4') {
+        showStatusMessage("MP4 recording feature coming soon!", "status-loading");
+        setTimeout(() => hideStatusMessage(), 2000);
+        return;
+      } else {
+        if (currentAudioBlob) {
+          blobToDownload = currentAudioBlob;
+          downloadBlob(blobToDownload, filename);
+          showStatusMessage("Audio downloaded!", "status-playing");
+          setTimeout(() => hideStatusMessage(), 2000);
+        } else {
+          showStatusMessage("No audio available", "status-error");
+          setTimeout(() => hideStatusMessage(), 2000);
+        }
+      }
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function replayAudio() {
+      if (currentAudio && !isPlaying) {
+        isPlaying = true;
+        currentAudio.currentTime = 0;
+        currentAudio.play();
+        const audioDuration = currentAudio.duration || 3;
+        animateSource(audioDuration);
+        
+        const submitButton = document.querySelector('input[type="submit"]');
+        if (submitButton) {
+          submitButton.value = "Stop Playback";
+        }
+        showStatusMessage("Replaying Doppler simulation...", "status-playing");
+      }
+    }
+
+    function showStatusMessage(message, className) {
+      let statusDiv = document.getElementById('status-message');
+      if (!statusDiv) {
+        statusDiv = document.createElement('div');
+        statusDiv.id = 'status-message';
+        statusDiv.className = 'status-message';
+        const rightSection = document.querySelector('.right-section');
+        if (rightSection) {
+          rightSection.appendChild(statusDiv);
+        }
+      }
+      
+      statusDiv.textContent = message;
+      statusDiv.className = `status-message ${className}`;
+      statusDiv.style.display = 'block';
+    }
+
+    function hideStatusMessage() {
+      const statusDiv = document.getElementById('status-message');
+      if (statusDiv) {
+        statusDiv.style.display = 'none';
+      }
+    }
+
+    function resizeCanvas() {
+      const canvas = document.getElementById("pathCanvas");
+      if (!canvas) return;
+      
+      const container = canvas.parentElement;
+      const containerWidth = container.clientWidth - 40;
+      
+      canvas.width = Math.max(600, containerWidth);
+      canvas.height = Math.max(450, containerWidth * 0.6);
+      
+      drawPath();
+    }
+
+    // Video recording functions (simplified)
+    function startVideoRecording() {
+      console.log("Video recording started");
+    }
+
+    async function stopVideoRecording() {
+      console.log("Video recording stopped");
+      return null;
+    }
+
+    window.onload = function() {
+      showParams();
+      updateAccelerationMode();
+      resizeCanvas();
+      
+      const form = document.querySelector('form');
+      if (form) {
+        form.addEventListener('submit', handleFormSubmit);
+      }
+      
+      // Add event listeners for manual profile validation
+      const timeElement = document.getElementById("manual_time_values");
+      const speedElement = document.getElementById("manual_speed_values");
+      if (timeElement) timeElement.addEventListener('input', validateManualProfile);
+      if (speedElement) speedElement.addEventListener('input', validateManualProfile);
+    };
+    
+    window.onresize = resizeCanvas;
+  </script>
+</head>
+<body>
+  <h2>Professional Doppler Shift Simulator</h2>
+  <p style="color: #666; margin-bottom: 20px;">Advanced vehicle motion simulation with custom acceleration control</p>
+  
+  <div class="container">
+    <div class="left-section">
+      <form action="/simulate" method="post">
+        
+        <!-- Acceleration Mode Selection -->
+        <div class="acceleration-section">
+          <h4>Acceleration Profile Mode</h4>
+          <div class="form-group">
+            <label for="acceleration_mode">Choose Acceleration Control:</label>
+            <select name="acceleration_mode" id="acceleration_mode" onchange="updateAccelerationMode()">
+              <option value="perfect">Perfect Physics (Constant Speed)</option>
+              <option value="custom">Custom Acceleration Parameters</option>
+              <option value="manual">Manual Speed Profile (Complete Control)</option>
+            </select>
+          </div>
+          <div class="method-info">
+            <strong>Perfect Physics:</strong> Ideal motion with constant speed and perfect path<br>
+            <strong>Custom:</strong> Manually adjust acceleration parameters with realistic variations<br>
+            <strong>Manual:</strong> Complete control with time vs speed input (overrides path speed)
+          </div>
+        </div>
+
+        <!-- Custom Acceleration Section -->
+        <div class="method-section hidden" id="custom-accel-section">
+          <h4>Custom Acceleration Parameters</h4>
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="max_acceleration">Max Acceleration (m/s²):</label>
+              <input name="max_acceleration" type="number" id="max_acceleration" step="0.1" placeholder="Auto">
+            </div>
+            <div class="form-group">
+              <label for="max_deceleration">Max Deceleration (m/s²):</label>
+              <input name="max_deceleration" type="number" id="max_deceleration" step="0.1" placeholder="Auto">
+            </div>
+            <div class="form-group">
+              <label for="acceleration_frequency">Accel Events/sec:</label>
+              <input name="acceleration_frequency" type="number" id="acceleration_frequency" step="0.1" placeholder="Auto">
+            </div>
+            <div class="form-group">
+              <label for="acceleration_strength">Accel Strength (%):</label>
+              <input name="acceleration_strength" type="number" id="acceleration_strength" step="1" placeholder="Auto">
+            </div>
+            <div class="form-group">
+              <label for="gear_change_frequency">Gear Changes/sec:</label>
+              <input name="gear_change_frequency" type="number" id="gear_change_frequency" step="0.01" placeholder="Auto">
+            </div>
+            <div class="form-group">
+              <label for="engine_roughness">Engine Roughness (%):</label>
+              <input name="engine_roughness" type="number" id="engine_roughness" step="1" placeholder="Auto">
+            </div>
+          </div>
+          <div class="method-info">
+            <strong>Custom Parameters:</strong> Override default acceleration parameters. Leave blank for automatic values based on vehicle type.
+          </div>
+        </div>
+
+        <!-- Manual Profile Section -->
+        <div class="method-section hidden" id="manual-profile-section">
+          <h4>Manual Speed Profile</h4>
+          
+          <div class="form-group">
+            <label for="manual_time_values">Time Values (seconds):</label>
+            <textarea name="manual_time_values" id="manual_time_values" placeholder="0,2,4,6,8,10"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="manual_speed_values">Speed Values (m/s):</label>
+            <textarea name="manual_speed_values" id="manual_speed_values" placeholder="20,30,15,35,25,20"></textarea>
+          </div>
+          
+          <div id="manual-validation" class="validation-message hidden"></div>
+          
+          <div style="margin: 15px 0;">
+            <strong>Quick Presets:</strong>
+            <div class="preset-buttons">
+              <button type="button" class="preset-btn" onclick="loadPresetProfile('city_traffic')">City Traffic</button>
+              <button type="button" class="preset-btn" onclick="loadPresetProfile('highway_cruise')">Highway Cruise</button>
+              <button type="button" class="preset-btn" onclick="loadPresetProfile('acceleration_test')">Acceleration Test</button>
+              <button type="button" class="preset-btn" onclick="loadPresetProfile('mountain_driving')">Mountain Driving</button>
+              <button type="button" class="preset-btn" onclick="loadPresetProfile('racing_circuit')">Racing Circuit</button>
+            </div>
+          </div>
+          
+          <div class="method-info">
+            <strong>Manual Control:</strong> Enter comma-separated time and speed values. Time values should be in ascending order. This overrides the path speed parameter and provides complete control over acceleration profile.
+            <br><strong>Example:</strong> Time: 0,2,5,8,10 | Speed: 15,30,20,45,25
+          </div>
+        </div>
+
+        <div class="method-section">
+          <h4>Audio Duration</h4>
+          <div class="form-group">
+            <label for="audio_duration">Output Duration (seconds):</label>
+            <input name="audio_duration" type="number" id="audio_duration" step="0.5" value="5" min="1" max="20" oninput="updateDistance(); drawPath()">
+          </div>
+          <div class="method-info">
+            Duration determines how long the vehicle takes to travel the path (or total time for manual profiles)
+          </div>
+        </div>
+
+        <div id="param-fields"></div>
+        <div id="distance-info" style="margin-top: 15px; font-weight: bold; color: #0066cc; padding: 10px; background-color: #f0f8ff; border-radius: 4px; border: 1px solid #e0e0e0;"></div>
+        
+        <input type="submit" value="Simulate Doppler Audio">
+      </form>
+    </div>
+    
+    <div class="center-section">
+      <h3>Path Visualization</h3>
+      <canvas id="pathCanvas" width="800" height="500"></canvas>
+      <div class="canvas-info">
+        Observer (red) | Start (green) | End (red) | Path (blue) | Distance Line (orange)<br>
+        <strong>Professional Doppler Simulation with Live Speed Profile Display</strong><br>
+        Coordinate range: ±200 meters | Grid spacing: 20m
+      </div>
+    </div>
+
+    <div class="right-section">
+      <div class="method-section">
+        <h4>Vehicle Type</h4>
+        <div class="form-group">
+          <label for="vehicle_type">Select Vehicle:</label>
+          <select name="vehicle_type" id="vehicle_type" form="main-form">
+            <option value="car">Car (horn.mp3)</option>
+            <option value="train">Train (train.mp3)</option>
+            <option value="flight">Flight (flight.mp3)</option>
+          </select>
+        </div>
+        <div class="method-info">
+          Choose the type of vehicle audio to simulate moving along the path
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="path">Select Path:</label>
+        <select name="path" id="path" onchange="showParams(); updateDistance();" form="main-form">
+          <option value="straight">Straight Line</option>
+          <option value="parabola">Parabola</option>
+          <option value="bezier">Bezier Curve</option>
+        </select>
+      </div>
+
+      <div class="method-section">
+        <h4>Doppler Processing Method</h4>
+        <div class="form-group">
+          <label for="shift_method">Audio Method:</label>
+          <select name="shift_method" id="shift_method" form="main-form">
+            <option value="timestretch">Variable Resampling (True Doppler)</option>
+            <option value="resample">Spectral Shifting (Precise Control)</option>
+            <option value="advanced">Phase Modulation (Smoothest Sweeps)</option>
+          </select>
+        </div>
+        <div class="method-info">
+          <strong>Variable Resampling:</strong> Creates true frequency sweeps visible in spectrogram<br>
+          <strong>Spectral Shifting:</strong> Direct frequency manipulation for precise Doppler curves<br>
+          <strong>Phase Modulation:</strong> Smooth instantaneous frequency changes for clean sweeps
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Fix form association issue
+    document.addEventListener('DOMContentLoaded', function() {
+      const mainForm = document.querySelector('form');
+      if (mainForm) {
+        mainForm.id = 'main-form';
+      }
+    });
+  </script>
+</body>
+</html>
