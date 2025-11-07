@@ -92,11 +92,6 @@ def get_vehicles():
                 'id': 'train',
                 'name': 'Heavy Train',
                 'description': 'Train horn/whistle sound'
-            },
-            {
-                'id': 'flight',
-                'name': 'Aircraft',
-                'description': 'Aircraft engine sound'
             }
         ]
     })
@@ -104,45 +99,54 @@ def get_vehicles():
 @app.route('/api/paths', methods=['GET'])
 def get_paths():
     """Get available path types and their parameters"""
+    vehicle_type = request.args.get('vehicle_type', 'car')
+    
+    all_paths = [
+        {
+            'id': 'straight',
+            'name': 'Straight Line',
+            'description': 'Vehicle moves in a straight line past observer',
+            'parameters': [
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
+                {'name': 'angle', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45}
+            ]
+        },
+        {
+            'id': 'parabola',
+            'name': 'Parabolic Path',
+            'description': 'Vehicle follows a parabolic trajectory',
+            'parameters': [
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1, 'min': 0.01, 'max': 1},
+                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100}
+            ]
+        },
+        {
+            'id': 'bezier',
+            'name': 'Bezier Curve',
+            'description': 'Vehicle follows a custom Bezier curve',
+            'parameters': [
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                {'name': 'x0', 'type': 'number', 'unit': 'm', 'default': -30},
+                {'name': 'y0', 'type': 'number', 'unit': 'm', 'default': 20},
+                {'name': 'x1', 'type': 'number', 'unit': 'm', 'default': -10},
+                {'name': 'y1', 'type': 'number', 'unit': 'm', 'default': -10},
+                {'name': 'x2', 'type': 'number', 'unit': 'm', 'default': 10},
+                {'name': 'y2', 'type': 'number', 'unit': 'm', 'default': -10},
+                {'name': 'x3', 'type': 'number', 'unit': 'm', 'default': 30},
+                {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 20}
+            ]
+        }
+    ]
+    
+    if vehicle_type == 'train':
+        filtered_paths = [p for p in all_paths if p['id'] == 'straight']
+    else:
+        filtered_paths = all_paths
+    
     return jsonify({
-        'paths': [
-            {
-                'id': 'straight',
-                'name': 'Straight Line',
-                'description': 'Vehicle moves in a straight line past observer',
-                'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
-                    {'name': 'angle', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45}
-                ]
-            },
-            {
-                'id': 'parabola',
-                'name': 'Parabolic Path',
-                'description': 'Vehicle follows a parabolic trajectory',
-                'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                    {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1, 'min': 0.01, 'max': 1},
-                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100}
-                ]
-            },
-            {
-                'id': 'bezier',
-                'name': 'Bezier Curve',
-                'description': 'Vehicle follows a custom Bezier curve',
-                'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                    {'name': 'x0', 'type': 'number', 'unit': 'm', 'default': -30},
-                    {'name': 'y0', 'type': 'number', 'unit': 'm', 'default': 20},
-                    {'name': 'x1', 'type': 'number', 'unit': 'm', 'default': -10},
-                    {'name': 'y1', 'type': 'number', 'unit': 'm', 'default': -10},
-                    {'name': 'x2', 'type': 'number', 'unit': 'm', 'default': 10},
-                    {'name': 'y2', 'type': 'number', 'unit': 'm', 'default': -10},
-                    {'name': 'x3', 'type': 'number', 'unit': 'm', 'default': 30},
-                    {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 20}
-                ]
-            }
-        ]
+        'paths': filtered_paths
     })
 
 @app.route('/api/presets', methods=['GET'])
