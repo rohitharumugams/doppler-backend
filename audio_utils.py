@@ -11,20 +11,21 @@ def load_original_audio(audio_type='horn', duration=5):
     """Load the original audio based on vehicle type and duration"""
     audio_files = {
         'car': 'static/horn.mp3',
-        'train': 'static/train.mp3', 
-        'flight': 'static/flight.mp3'
+        'train': 'static/train.mp3',
+        'flight': 'static/flight.mp3',
+        'drone': 'static/drone.mp3'  # <-- added drone mapping
     }
-    
+
     filename = audio_files.get(audio_type, 'static/horn.mp3')
-    
+
     try:
         # Load without duration limit first to get the full file
         y, original_sr = librosa.load(filename, sr=SR, mono=True)
         original_duration = len(y) / SR
-        
+
         print(f"Loaded {audio_type} audio from {filename}")
         print(f"Original duration: {original_duration:.2f}s, Requested: {duration}s")
-        
+
         if original_duration >= duration:
             # If original is longer than requested, just trim it
             target_samples = int(SR * duration)
@@ -34,127 +35,151 @@ def load_original_audio(audio_type='horn', duration=5):
             # If original is shorter, repeat and stitch with overlaps
             y = extend_audio_with_overlap(y, duration, SR)
             print(f"Extended to {duration}s with seamless overlaps")
-        
+
         return y
-        
+
     except Exception as e:
         print(f"Could not load {filename}: {e}")
         print(f"Generating fallback {audio_type} sound (duration: {duration}s)...")
-        
+
         # Generate fallback sounds based on type
         t = np.linspace(0, duration, int(SR * duration))
-        
+
         if audio_type == 'car':
             # Car horn - multiple harmonics
-            audio = (np.sin(2 * np.pi * 440 * t) + 
-                    0.7 * np.sin(2 * np.pi * 880 * t) + 
-                    0.4 * np.sin(2 * np.pi * 1320 * t) +
-                    0.2 * np.sin(2 * np.pi * 660 * t))
+            audio = (np.sin(2 * np.pi * 440 * t) +
+                     0.7 * np.sin(2 * np.pi * 880 * t) +
+                     0.4 * np.sin(2 * np.pi * 1320 * t) +
+                     0.2 * np.sin(2 * np.pi * 660 * t))
             envelope = np.exp(-t * 0.3) * 0.5 + 0.5
-            
+
         elif audio_type == 'train':
             # Train - lower frequencies with rhythm
-            audio = (np.sin(2 * np.pi * 220 * t) + 
-                    0.8 * np.sin(2 * np.pi * 110 * t) + 
-                    0.6 * np.sin(2 * np.pi * 330 * t) +
-                    0.3 * np.sin(2 * np.pi * 440 * t))
+            audio = (np.sin(2 * np.pi * 220 * t) +
+                     0.8 * np.sin(2 * np.pi * 110 * t) +
+                     0.6 * np.sin(2 * np.pi * 330 * t) +
+                     0.3 * np.sin(2 * np.pi * 440 * t))
             # Add rhythmic component for train-like sound
             rhythm = 1 + 0.3 * np.sin(2 * np.pi * 8 * t)
             audio *= rhythm
             envelope = 0.8 + 0.2 * np.sin(2 * np.pi * 2 * t)
-            
+
         elif audio_type == 'flight':
             # Flight - higher frequencies with turbine-like sound
-            audio = (0.6 * np.sin(2 * np.pi * 800 * t) + 
-                    0.8 * np.sin(2 * np.pi * 1200 * t) + 
-                    0.4 * np.sin(2 * np.pi * 1600 * t) +
-                    0.3 * np.sin(2 * np.pi * 400 * t))
+            audio = (0.6 * np.sin(2 * np.pi * 800 * t) +
+                     0.8 * np.sin(2 * np.pi * 1200 * t) +
+                     0.4 * np.sin(2 * np.pi * 1600 * t) +
+                     0.3 * np.sin(2 * np.pi * 400 * t))
             # Add turbine-like modulation
             turbine = 1 + 0.2 * np.sin(2 * np.pi * 15 * t)
             audio *= turbine
             envelope = 0.9 + 0.1 * np.sin(2 * np.pi * 3 * t)
+
+        elif audio_type == 'drone':
+            # Drone fallback: rotor buzz with harmonics and amplitude modulation
+            # multiple rotor harmonics and vibratory texture
+            base_freq = 120.0  # rotor fundamental (~120 Hz) - tuneable
+            audio = np.zeros_like(t)
+            harmonics = [1, 2, 3, 4, 6]  # include some non-integer-like components
+            for h in harmonics:
+                # slight inharmonic detune for realism
+                detune = 1.0 + np.random.uniform(-0.002, 0.002)
+                audio += (0.6 / h) * np.sin(2 * np.pi * base_freq * h * detune * t)
+
+            # Add higher-frequency blades/air interaction
+            audio += 0.2 * np.sin(2 * np.pi * 800 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 6 * t))
+
+            # Collective/throttle modulation to create rise/fall and micro-variations
+            throttle = 1.0 + 0.15 * np.sin(2 * np.pi * 1.5 * t) + 0.05 * np.sin(2 * np.pi * 4.7 * t)
+            # Rotor jitter (small, higher-frequency amplitude changes)
+            jitter = 1.0 + 0.02 * np.sin(2 * np.pi * 60 * t)
+            envelope = 0.8 * throttle * jitter
+            # Slight low-pass to simulate rotor body resonance (softening)
+            b, a = signal.butter(2, 2000.0 / (SR / 2.0), btype='low')
+            audio = signal.lfilter(b, a, audio)
+
         else:
             # Default fallback (same as car)
-            audio = (np.sin(2 * np.pi * 440 * t) + 
-                    0.7 * np.sin(2 * np.pi * 880 * t) + 
-                    0.4 * np.sin(2 * np.pi * 1320 * t) +
-                    0.2 * np.sin(2 * np.pi * 660 * t))
+            audio = (np.sin(2 * np.pi * 440 * t) +
+                     0.7 * np.sin(2 * np.pi * 880 * t) +
+                     0.4 * np.sin(2 * np.pi * 1320 * t) +
+                     0.2 * np.sin(2 * np.pi * 660 * t))
             envelope = np.exp(-t * 0.3) * 0.5 + 0.5
-        
+
         return audio * envelope
 
 
 def extend_audio_with_overlap(original_audio, target_duration, sample_rate):
     """
     Extend audio to target duration by repeating with smooth overlaps
-    
+
     Args:
         original_audio: numpy array of audio samples
         target_duration: desired duration in seconds
         sample_rate: audio sample rate
-    
+
     Returns:
         numpy array: extended audio with seamless transitions
     """
     original_length = len(original_audio)
     original_duration = original_length / sample_rate
     target_length = int(sample_rate * target_duration)
-    
+
     if original_length >= target_length:
         return original_audio[:target_length]
-    
+
     # Calculate overlap parameters
     overlap_duration = 0.1  # 100ms overlap for smooth transitions
     overlap_samples = int(sample_rate * overlap_duration)
     overlap_samples = min(overlap_samples, original_length // 4)  # Don't overlap more than 25% of original
-    
+
     print(f"  Using {overlap_samples} samples ({overlap_samples/sample_rate*1000:.0f}ms) overlap")
-    
+
     # Create extended audio array
     extended_audio = np.zeros(target_length)
-    
+
     # Copy first iteration completely
     extended_audio[:original_length] = original_audio
     current_position = original_length
-    
+
     # Add subsequent iterations with crossfade overlaps
     iteration = 1
     while current_position < target_length:
         # Calculate how much we need and can fit
         remaining_samples = target_length - current_position
-        
+
         if remaining_samples <= overlap_samples:
             # Last piece - just fade out what we have
             break
-            
+
         # Start position for this iteration (with overlap)
         start_pos = current_position - overlap_samples
-        
+
         # How much of the original audio to use
         samples_to_use = min(original_length, remaining_samples + overlap_samples)
         end_pos = start_pos + samples_to_use
-        
+
         if end_pos > target_length:
             samples_to_use = target_length - start_pos
             end_pos = target_length
-        
+
         # Create crossfade window for overlap region
         if overlap_samples > 0:
             # Fade out existing audio
             fade_out = np.linspace(1, 0, overlap_samples)
             # Fade in new audio
             fade_in = np.linspace(0, 1, overlap_samples)
-            
+
             # Apply crossfade in overlap region
             overlap_end = start_pos + overlap_samples
-            
+
             # Fade out existing content
             extended_audio[start_pos:overlap_end] *= fade_out
-            
+
             # Add faded-in new content
             new_audio_overlap = original_audio[:overlap_samples] * fade_in
             extended_audio[start_pos:overlap_end] += new_audio_overlap
-            
+
             # Add rest of new audio (non-overlapping part)
             if samples_to_use > overlap_samples:
                 non_overlap_samples = samples_to_use - overlap_samples
@@ -162,19 +187,19 @@ def extend_audio_with_overlap(original_audio, target_duration, sample_rate):
         else:
             # No overlap - just concatenate
             extended_audio[start_pos:end_pos] = original_audio[:samples_to_use]
-        
+
         # Update position for next iteration
         current_position = end_pos
         iteration += 1
-    
+
     print(f"  Extended audio using {iteration} iterations with smooth crossfades")
-    
+
     # Apply gentle fade out at the very end to avoid clicks
     fade_length = min(int(sample_rate * 0.05), target_length // 20)  # 50ms or 5% of duration
     if fade_length > 0:
         fade_out_final = np.linspace(1, 0, fade_length)
         extended_audio[-fade_length:] *= fade_out_final
-    
+
     return extended_audio
 
 # Keep backward compatibility
