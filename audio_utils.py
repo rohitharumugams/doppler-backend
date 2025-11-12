@@ -1,440 +1,554 @@
-# audio_utils.py
-# Robust audio loading, extension, and Doppler application utilities for Doppler simulator.
-# Exports: load_original_audio, apply_doppler_to_audio_fixed,
-#          apply_doppler_to_audio_fixed_alternative, apply_doppler_to_audio_fixed_advanced,
-#          normalize_amplitudes, save_audio, SR
-
 import numpy as np
 import soundfile as sf
 import librosa
 from scipy import signal
 from scipy.interpolate import interp1d
-import os
 
-SR = 22050  # sample rate used throughout
-DEFAULT_EXTEND_OVERLAP_SEC = 0.1  # default overlap when extending audio
+SOUND_DURATION = 5  # Default seconds - will be overridden by user input
+SR = 22050  # Sample rate
 
-# Map vehicle type to fallback filename (if you store assets elsewhere, update these paths)
-AUDIO_FILE_MAP = {
-    'car': 'static/horn.mp3',
-    'train': 'static/train.mp3',
-    'flight': 'static/flight.mp3',
-    'drone': 'static/drone.mp3'
-}
-
-
-# ---------------------------
-# Loading / extending helpers
-# ---------------------------
-def load_original_audio(audio_type='car', duration=5.0):
-    """
-    Load the original audio for a given vehicle type and ensure it's exactly `duration` seconds.
-    - audio_type: key in AUDIO_FILE_MAP (e.g., 'car', 'drone')
-    - duration: desired seconds (float)
-    Returns: mono numpy array of length SR * duration (dtype float32)
-    """
-    target_samples = int(SR * float(duration))
-    filename = AUDIO_FILE_MAP.get(audio_type, AUDIO_FILE_MAP['car'])
-
-    # Try to load using librosa; if fails, generate a synthetic fallback
+def load_original_audio(audio_type='horn', duration=5):
+    """Load the original audio based on vehicle type and duration"""
+    audio_files = {
+        'car': 'static/horn.mp3',
+        'train': 'static/train.mp3', 
+        'flight': 'static/flight.mp3'
+    }
+    
+    filename = audio_files.get(audio_type, 'static/horn.mp3')
+    
     try:
+        # Load without duration limit first to get the full file
         y, original_sr = librosa.load(filename, sr=SR, mono=True)
-        # Trim or extend as needed
-        if len(y) >= target_samples:
-            return y[:target_samples].astype(np.float32)
+        original_duration = len(y) / SR
+        
+        print(f"Loaded {audio_type} audio from {filename}")
+        print(f"Original duration: {original_duration:.2f}s, Requested: {duration}s")
+        
+        if original_duration >= duration:
+            # If original is longer than requested, just trim it
+            target_samples = int(SR * duration)
+            y = y[:target_samples]
+            print(f"Trimmed to {duration}s")
         else:
-            return extend_audio_with_overlap(y, duration, SR)
+            # If original is shorter, repeat and stitch with overlaps
+            y = extend_audio_with_overlap(y, duration, SR)
+            print(f"Extended to {duration}s with seamless overlaps")
+        
+        return y
+        
     except Exception as e:
-        # Log and generate fallback synthetic audio
-        print(f"Warning: failed to load '{filename}' ({e}). Generating fallback '{audio_type}' sound.")
-        return _generate_fallback_sound(audio_type, duration)
-
-
-def _generate_fallback_sound(audio_type, duration):
-    """
-    Generate a simple synthetic audio signal when asset not available.
-    Keeps character distinct for car/train/drone.
-    """
-    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
-    if audio_type == 'car':
-        audio = (np.sin(2*np.pi*440*t) +
-                 0.7*np.sin(2*np.pi*880*t) +
-                 0.4*np.sin(2*np.pi*1320*t))
-        envelope = np.exp(-t * 0.3) * 0.5 + 0.5
-    elif audio_type == 'train':
-        audio = (np.sin(2*np.pi*220*t) +
-                 0.8*np.sin(2*np.pi*110*t) +
-                 0.6*np.sin(2*np.pi*330*t))
-        rhythm = 1.0 + 0.3*np.sin(2*np.pi*8*t)
-        audio = audio * rhythm
-        envelope = 0.8 + 0.2*np.sin(2*np.pi*2*t)
-    elif audio_type == 'flight':
-        audio = (0.6*np.sin(2*np.pi*800*t) +
-                 0.8*np.sin(2*np.pi*1200*t) +
-                 0.4*np.sin(2*np.pi*1600*t))
-        turbine = 1.0 + 0.2*np.sin(2*np.pi*15*t)
-        audio = audio * turbine
-        envelope = 0.9 + 0.1*np.sin(2*np.pi*3*t)
-    else:  # drone
-        # Drone-like rotor: rich high-frequency harmonics + mild amplitude modulation
-        base = (0.8*np.sin(2*np.pi*400*t) +
-                0.6*np.sin(2*np.pi*800*t) +
-                0.4*np.sin(2*np.pi*1200*t) +
-                0.2*np.sin(2*np.pi*1600*t))
-        tremolo = 1.0 + 0.12*np.sin(2*np.pi*8*t)  # rotor blade modulation
-        audio = base * tremolo
-        envelope = 0.95 - 0.05*np.exp(-t*1.0)
-
-    out = audio * envelope
-    # Normalize moderate amplitude
-    out = out.astype(np.float32)
-    maxv = np.max(np.abs(out))
-    if maxv > 0:
-        out = out / maxv * 0.8
-    return out
+        print(f"Could not load {filename}: {e}")
+        print(f"Generating fallback {audio_type} sound (duration: {duration}s)...")
+        
+        # Generate fallback sounds based on type
+        t = np.linspace(0, duration, int(SR * duration))
+        
+        if audio_type == 'car':
+            # Car horn - multiple harmonics
+            audio = (np.sin(2 * np.pi * 440 * t) + 
+                    0.7 * np.sin(2 * np.pi * 880 * t) + 
+                    0.4 * np.sin(2 * np.pi * 1320 * t) +
+                    0.2 * np.sin(2 * np.pi * 660 * t))
+            envelope = np.exp(-t * 0.3) * 0.5 + 0.5
+            
+        elif audio_type == 'train':
+            # Train - lower frequencies with rhythm
+            audio = (np.sin(2 * np.pi * 220 * t) + 
+                    0.8 * np.sin(2 * np.pi * 110 * t) + 
+                    0.6 * np.sin(2 * np.pi * 330 * t) +
+                    0.3 * np.sin(2 * np.pi * 440 * t))
+            # Add rhythmic component for train-like sound
+            rhythm = 1 + 0.3 * np.sin(2 * np.pi * 8 * t)
+            audio *= rhythm
+            envelope = 0.8 + 0.2 * np.sin(2 * np.pi * 2 * t)
+            
+        elif audio_type == 'flight':
+            # Flight - higher frequencies with turbine-like sound
+            audio = (0.6 * np.sin(2 * np.pi * 800 * t) + 
+                    0.8 * np.sin(2 * np.pi * 1200 * t) + 
+                    0.4 * np.sin(2 * np.pi * 1600 * t) +
+                    0.3 * np.sin(2 * np.pi * 400 * t))
+            # Add turbine-like modulation
+            turbine = 1 + 0.2 * np.sin(2 * np.pi * 15 * t)
+            audio *= turbine
+            envelope = 0.9 + 0.1 * np.sin(2 * np.pi * 3 * t)
+        else:
+            # Default fallback (same as car)
+            audio = (np.sin(2 * np.pi * 440 * t) + 
+                    0.7 * np.sin(2 * np.pi * 880 * t) + 
+                    0.4 * np.sin(2 * np.pi * 1320 * t) +
+                    0.2 * np.sin(2 * np.pi * 660 * t))
+            envelope = np.exp(-t * 0.3) * 0.5 + 0.5
+        
+        return audio * envelope
 
 
 def extend_audio_with_overlap(original_audio, target_duration, sample_rate):
     """
-    Extend a shorter clip to reach target_duration (in seconds) by repeating it with small
-    crossfades to create a seamless loop.
+    Extend audio to target duration by repeating with smooth overlaps
+    
+    Args:
+        original_audio: numpy array of audio samples
+        target_duration: desired duration in seconds
+        sample_rate: audio sample rate
+    
+    Returns:
+        numpy array: extended audio with seamless transitions
     """
-    original = np.asarray(original_audio, dtype=np.float32)
-    original_len = len(original)
-    target_len = int(sample_rate * float(target_duration))
-
-    if original_len == 0:
-        # Fallback to synthetic short pulse
-        t = np.linspace(0, target_duration, target_len, endpoint=False)
-        return 0.5 * np.sin(2*np.pi*440*t).astype(np.float32)
-
-    if original_len >= target_len:
-        return original[:target_len]
-
-    overlap_sec = DEFAULT_EXTEND_OVERLAP_SEC
-    overlap_samples = int(sample_rate * overlap_sec)
-    overlap_samples = max(1, min(overlap_samples, original_len // 4))
-
-    out = np.zeros(target_len, dtype=np.float32)
-    out[:original_len] = original
-    write_pos = original_len
-
-    iter_count = 1
-    while write_pos < target_len:
-        remaining = target_len - write_pos
-        # compute region to copy from original
-        copy_len = min(original_len - overlap_samples, remaining)
-        start_write = max(0, write_pos - overlap_samples)
-        end_write = start_write + overlap_samples + copy_len
-
-        # crossfade overlap region
+    original_length = len(original_audio)
+    original_duration = original_length / sample_rate
+    target_length = int(sample_rate * target_duration)
+    
+    if original_length >= target_length:
+        return original_audio[:target_length]
+    
+    # Calculate overlap parameters
+    overlap_duration = 0.1  # 100ms overlap for smooth transitions
+    overlap_samples = int(sample_rate * overlap_duration)
+    overlap_samples = min(overlap_samples, original_length // 4)  # Don't overlap more than 25% of original
+    
+    print(f"  Using {overlap_samples} samples ({overlap_samples/sample_rate*1000:.0f}ms) overlap")
+    
+    # Create extended audio array
+    extended_audio = np.zeros(target_length)
+    
+    # Copy first iteration completely
+    extended_audio[:original_length] = original_audio
+    current_position = original_length
+    
+    # Add subsequent iterations with crossfade overlaps
+    iteration = 1
+    while current_position < target_length:
+        # Calculate how much we need and can fit
+        remaining_samples = target_length - current_position
+        
+        if remaining_samples <= overlap_samples:
+            # Last piece - just fade out what we have
+            break
+            
+        # Start position for this iteration (with overlap)
+        start_pos = current_position - overlap_samples
+        
+        # How much of the original audio to use
+        samples_to_use = min(original_length, remaining_samples + overlap_samples)
+        end_pos = start_pos + samples_to_use
+        
+        if end_pos > target_length:
+            samples_to_use = target_length - start_pos
+            end_pos = target_length
+        
+        # Create crossfade window for overlap region
         if overlap_samples > 0:
-            fade_out = np.linspace(1.0, 0.0, overlap_samples, endpoint=False).astype(np.float32)
-            fade_in = np.linspace(0.0, 1.0, overlap_samples, endpoint=False).astype(np.float32)
-            # fade existing region
-            out[start_write:start_write+overlap_samples] *= fade_out
-            # add faded-in content from original start
-            out[start_write:start_write+overlap_samples] += original[:overlap_samples] * fade_in
-        # add non-overlapping portion
-        if copy_len > 0:
-            src_start = overlap_samples
-            src_end = overlap_samples + copy_len
-            dest_start = start_write + overlap_samples
-            dest_end = dest_start + copy_len
-            out[dest_start:dest_end] = original[src_start:src_end]
+            # Fade out existing audio
+            fade_out = np.linspace(1, 0, overlap_samples)
+            # Fade in new audio
+            fade_in = np.linspace(0, 1, overlap_samples)
+            
+            # Apply crossfade in overlap region
+            overlap_end = start_pos + overlap_samples
+            
+            # Fade out existing content
+            extended_audio[start_pos:overlap_end] *= fade_out
+            
+            # Add faded-in new content
+            new_audio_overlap = original_audio[:overlap_samples] * fade_in
+            extended_audio[start_pos:overlap_end] += new_audio_overlap
+            
+            # Add rest of new audio (non-overlapping part)
+            if samples_to_use > overlap_samples:
+                non_overlap_samples = samples_to_use - overlap_samples
+                extended_audio[overlap_end:end_pos] = original_audio[overlap_samples:overlap_samples + non_overlap_samples]
+        else:
+            # No overlap - just concatenate
+            extended_audio[start_pos:end_pos] = original_audio[:samples_to_use]
+        
+        # Update position for next iteration
+        current_position = end_pos
+        iteration += 1
+    
+    print(f"  Extended audio using {iteration} iterations with smooth crossfades")
+    
+    # Apply gentle fade out at the very end to avoid clicks
+    fade_length = min(int(sample_rate * 0.05), target_length // 20)  # 50ms or 5% of duration
+    if fade_length > 0:
+        fade_out_final = np.linspace(1, 0, fade_length)
+        extended_audio[-fade_length:] *= fade_out_final
+    
+    return extended_audio
 
-        write_pos = end_write
-        iter_count += 1
+# Keep backward compatibility
+def load_original_horn():
+    """Backward compatibility function"""
+    return load_original_audio('car', 5)
 
-    # final gentle fade-out to avoid clicks
-    fade_len = min(int(sample_rate * 0.05), target_len // 50)
-    if fade_len > 0:
-        fade = np.linspace(1.0, 0.0, fade_len, endpoint=False).astype(np.float32)
-        out[-fade_len:] *= fade
-
-    # normalize moderate amplitude
-    maxv = np.max(np.abs(out))
-    if maxv > 0:
-        out = out / maxv * 0.8
-
-    return out.astype(np.float32)
-
-
-# ---------------------------
-# Doppler application methods
-# ---------------------------
 def apply_true_doppler_shift(original_audio, freq_ratios, amplitudes):
     """
-    Time-domain sample-rate warping approach. Interpolates an instantaneous sample index
-    trajectory derived from freq_ratios and resamples the original audio along that trajectory.
-    Produces clear sweeps in spectrograms.
+    Apply TRUE Doppler shift that will show proper frequency sweeps in spectrogram.
+    This creates strong, visible frequency modulation over time.
     """
-    original = np.asarray(original_audio, dtype=np.float32)
-    N = len(original)
-    # desired output length equals original length (caller can trim/pad)
-    out_len = N
-
-    # create per-sample time mapping
-    # freq_ratios is per-frame values; map them to per-sample multiplier curve
-    curve_x = np.linspace(0, out_len - 1, num=len(freq_ratios))
-    interp_freq = interp1d(curve_x, freq_ratios, kind='linear', bounds_error=False, fill_value=(freq_ratios[0], freq_ratios[-1]))
-    interp_amp = interp1d(curve_x, amplitudes, kind='linear', bounds_error=False, fill_value=(amplitudes[0], amplitudes[-1]))
-
-    freq_curve = interp_freq(np.arange(out_len))
-    amp_curve = interp_amp(np.arange(out_len))
-
-    # smooth small jitter but don't over-smooth
+    target_length = len(original_audio)
+    
+    # Create time axes
+    time_samples = np.arange(target_length)
+    curve_time = np.linspace(0, target_length-1, len(freq_ratios))
+    
+    # Interpolate frequency ratios and amplitudes to match audio length
+    freq_interp = interp1d(curve_time, freq_ratios, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    amp_interp = interp1d(curve_time, amplitudes, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    
+    freq_curve = freq_interp(time_samples)
+    amp_curve = amp_interp(time_samples)
+    
+    # Apply minimal smoothing to preserve sharp frequency changes
     if len(freq_curve) > 50:
-        try:
-            window = 11 if len(freq_curve) >= 11 else (len(freq_curve)//2*2+1)
-            freq_curve = signal.savgol_filter(freq_curve, window, 1)
-            amp_curve = signal.savgol_filter(amp_curve, window, 1)
-        except Exception:
-            pass
-
-    # cumulative sample progression (sum of instantaneous speed multipliers)
-    # cumulative_samples[n] gives the position (in original sample indices) to sample at output index n
-    cumulative = np.cumsum(freq_curve)
-    # normalize to fit within original audio index range
-    if cumulative[-1] <= 0:
-        cumulative[-1] = 1.0
-    cumulative = cumulative * ((N - 1) / cumulative[-1])
-
-    # Resample original at fractional indices using np.interp
-    orig_indices = np.arange(N)
-    output = np.interp(cumulative, orig_indices, original).astype(np.float32)
-
-    # Apply amplitude envelope
-    output *= amp_curve.astype(np.float32)
-
-    # Moderate normalization to avoid clipping
-    maxv = np.max(np.abs(output)) if output.size else 1.0
-    if maxv > 0:
-        output = output / maxv * 0.98
-
+        window_size = min(11, len(freq_curve) // 100 * 2 + 1)  # Much smaller window
+        freq_curve = signal.savgol_filter(freq_curve, window_size, 1)  # Lower order
+        amp_curve = signal.savgol_filter(amp_curve, window_size, 1)
+    
+    print(f"Applying TRUE Doppler shift with STRONG frequency modulation")
+    print(f"Frequency ratio range: {np.min(freq_curve):.3f} to {np.max(freq_curve):.3f}")
+    print(f"Frequency variation: {np.std(freq_curve):.3f}")
+    
+    # METHOD: Direct instantaneous frequency modulation
+    # This will create visible sweeps by modulating the instantaneous frequency
+    
+    # Create the time-varying frequency modulation
+    # Convert frequency ratios to instantaneous frequency multipliers
+    dt = 1.0 / SR
+    
+    # Calculate instantaneous phase increments
+    # This directly controls how fast we move through the original audio
+    phase_increments = freq_curve * dt * SR
+    
+    # Calculate cumulative phase (sample positions in original audio)
+    cumulative_phase = np.cumsum(phase_increments)
+    
+    # Normalize to stay within audio bounds
+    max_phase = target_length - 1
+    if cumulative_phase[-1] > max_phase:
+        cumulative_phase = cumulative_phase * max_phase / cumulative_phase[-1]
+    
+    # Sample original audio at these phase positions using interpolation
+    output = np.interp(cumulative_phase, np.arange(target_length), original_audio)
+    
+    # Apply amplitude modulation
+    output *= amp_curve
+    
+    # Verify the effect strength
+    print(f"Phase range: 0 to {cumulative_phase[-1]:.1f} (should be close to {max_phase})")
+    print(f"Expected strong frequency sweeps in spectrogram")
+    
     return output
-
 
 def apply_spectral_doppler_shift(original_audio, freq_ratios, amplitudes):
     """
-    STFT-based spectral warping. This is heavier but can produce good visual sweeps.
-    We use moderate STFT parameters to emphasize temporal resolution.
+    Enhanced spectral method with stronger frequency shifts for visible spectrogram sweeps.
     """
-    original = np.asarray(original_audio, dtype=np.float32)
-    N = len(original)
-
-    # Map per-frame freq_ratios/amplitudes to STFT frames
-    n_fft = 1024
-    hop_length = 256
-    stft = librosa.stft(original, n_fft=n_fft, hop_length=hop_length)
-    mag = np.abs(stft)
+    target_length = len(original_audio)
+    
+    # Create time axes
+    time_samples = np.arange(target_length)
+    curve_time = np.linspace(0, target_length-1, len(freq_ratios))
+    
+    # Interpolate frequency ratios and amplitudes
+    freq_interp = interp1d(curve_time, freq_ratios, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    amp_interp = interp1d(curve_time, amplitudes, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    
+    freq_curve = freq_interp(time_samples)
+    amp_curve = amp_interp(time_samples)
+    
+    # STFT parameters for good time-frequency resolution
+    n_fft = 1024  # Smaller for better time resolution
+    hop_length = 256  # Smaller hop for smoother frequency transitions
+    
+    print(f"Applying ENHANCED SPECTRAL Doppler shift")
+    print(f"Frequency ratio range: {np.min(freq_curve):.3f} to {np.max(freq_curve):.3f}")
+    print(f"Using smaller STFT windows for better frequency sweep visibility")
+    
+    # Compute STFT of original audio
+    stft = librosa.stft(original_audio, n_fft=n_fft, hop_length=hop_length)
+    magnitude = np.abs(stft)
     phase = np.angle(stft)
-
-    n_frames = stft.shape[1]
-    frame_positions = np.linspace(0, N - 1, n_frames)
-    freq_curve_interp = interp1d(np.linspace(0, N - 1, len(freq_ratios)), freq_ratios, kind='linear', bounds_error=False, fill_value=(freq_ratios[0], freq_ratios[-1]))
-    amp_curve_interp = interp1d(np.linspace(0, N - 1, len(amplitudes)), amplitudes, kind='linear', bounds_error=False, fill_value=(amplitudes[0], amplitudes[-1]))
-
-    freq_curve_frames = freq_curve_interp(frame_positions)
-    amp_curve_frames = amp_curve_interp(frame_positions)
-
+    
+    # Get frequency bins
     freqs = librosa.fft_frequencies(sr=SR, n_fft=n_fft)
-    output_stft = np.zeros_like(stft, dtype=np.complex64)
-
-    # For each frame, remap energy from old bins to new bins based on ratio
-    for fi in range(n_frames):
-        ratio = float(freq_curve_frames[fi])
-        amp_fac = float(amp_curve_frames[fi])
-
-        mag_frame = mag[:, fi]
-        ph_frame = phase[:, fi]
-
-        # New magnitude array init
-        new_mag = np.zeros_like(mag_frame)
-        new_ph = np.zeros_like(ph_frame)
-
-        # For each source bin, compute where it should land after scaling
-        # Use linear interpolation of magnitude into the target bins
-        target_bin_positions = freqs * ratio
-        # convert target freqs to fractional bin indices in current freqs array
-        target_idx = np.interp(target_bin_positions, freqs, np.arange(len(freqs)))
-        # distribute each source bin's magnitude into lower/upper bins
-        lower = np.floor(target_idx).astype(int)
-        upper = np.ceil(target_idx).astype(int)
-        weights = target_idx - lower
-
-        # clip indices
-        L = len(new_mag)
-        for src_bin in range(1, len(freqs)):  # skip DC at index 0 for stability
-            tgt_l = lower[src_bin]
-            tgt_u = upper[src_bin]
-            w = weights[src_bin]
-            val = mag_frame[src_bin]
-            if 0 <= tgt_l < L:
-                new_mag[tgt_l] += val * (1.0 - w)
-                new_ph[tgt_l] = ph_frame[src_bin]
-            if 0 <= tgt_u < L:
-                new_mag[tgt_u] += val * w
-                new_ph[tgt_u] = ph_frame[src_bin]
-
-        # Store complex frame with amplitude modulation
-        output_stft[:, fi] = (new_mag * amp_fac) * np.exp(1j * new_ph)
-
-    # ISTFT back to time domain
-    out = librosa.istft(output_stft, hop_length=hop_length, length=N).astype(np.float32)
-
-    # Normalize
-    maxv = np.max(np.abs(out)) if out.size else 1.0
-    if maxv > 0:
-        out = out / maxv * 0.98
-
-    return out
-
+    
+    # Create output STFT
+    output_stft = np.zeros_like(stft, dtype=complex)
+    
+    # Process each time frame with stronger frequency shifting
+    n_frames = stft.shape[1]
+    for frame_idx in range(n_frames):
+        # Get time position for this frame
+        time_sample = int(frame_idx * hop_length)
+        
+        # Get frequency ratio at this time
+        if time_sample < len(freq_curve):
+            freq_ratio = freq_curve[time_sample]
+            amplitude = amp_curve[time_sample]
+        else:
+            freq_ratio = freq_curve[-1]
+            amplitude = amp_curve[-1]
+        
+        # Apply stronger frequency shifting
+        current_magnitude = magnitude[:, frame_idx]
+        current_phase = phase[:, frame_idx]
+        
+        # Create new frequency mapping with wider range
+        new_magnitude = np.zeros_like(current_magnitude)
+        new_phase = np.zeros_like(current_phase)
+        
+        # Shift each frequency bin
+        for freq_idx in range(len(freqs)):
+            if freq_idx == 0:  # Skip DC component
+                new_magnitude[0] = current_magnitude[0]
+                new_phase[0] = current_phase[0]
+                continue
+                
+            old_freq = freqs[freq_idx]
+            new_freq = old_freq * freq_ratio
+            
+            # Find target frequency bin(s)
+            if new_freq > 0 and new_freq < freqs[-1]:
+                # Use linear interpolation for smoother frequency mapping
+                target_idx = np.interp(new_freq, freqs, np.arange(len(freqs)))
+                
+                # Distribute energy between adjacent bins
+                lower_idx = int(np.floor(target_idx))
+                upper_idx = int(np.ceil(target_idx))
+                
+                if lower_idx < len(new_magnitude) and upper_idx < len(new_magnitude):
+                    weight = target_idx - lower_idx
+                    
+                    # Distribute magnitude and preserve phase relationships
+                    new_magnitude[lower_idx] += current_magnitude[freq_idx] * (1 - weight)
+                    new_magnitude[upper_idx] += current_magnitude[freq_idx] * weight
+                    
+                    # Preserve phase for coherent reconstruction
+                    new_phase[lower_idx] = current_phase[freq_idx]
+                    new_phase[upper_idx] = current_phase[freq_idx]
+        
+        # Apply amplitude modulation and store result
+        output_stft[:, frame_idx] = new_magnitude * np.exp(1j * new_phase) * amplitude
+    
+    # Convert back to time domain
+    output = librosa.istft(output_stft, hop_length=hop_length, length=target_length)
+    
+    print(f"Spectral processing complete - should show clear frequency sweeps")
+    
+    return output
 
 def apply_phase_modulation_doppler(original_audio, freq_ratios, amplitudes):
     """
-    Phase modulation approach: constructs an analytic signal, modulates its phase trajectory
-    according to freq_ratios, and returns the real part. This yields clear instantaneous-frequency sweeps.
+    Enhanced phase modulation method for maximum frequency sweep visibility.
+    This creates the strongest and clearest frequency sweeps in spectrograms.
+    
+    FIXED: Removed artificial 2x amplification to maintain realistic Doppler effect.
     """
-    original = np.asarray(original_audio, dtype=np.float32)
-    N = len(original)
-
-    # Interpolate freq_ratios/amplitudes to sample resolution
-    x_src = np.linspace(0, N - 1, num=len(freq_ratios))
-    freq_interp = interp1d(x_src, freq_ratios, kind='linear', bounds_error=False, fill_value=(freq_ratios[0], freq_ratios[-1]))
-    amp_interp = interp1d(x_src, amplitudes, kind='linear', bounds_error=False, fill_value=(amplitudes[0], amplitudes[-1]))
-
-    freq_curve = freq_interp(np.arange(N))
-    amp_curve = amp_interp(np.arange(N))
-
-    # Convert ratio curve to deviation around 1.0 and compute phase increments
-    # instantaneous frequency multiplier is freq_curve; cumulative phase is integral
+    target_length = len(original_audio)
+    
+    # Create time axes
+    time_samples = np.arange(target_length)
+    curve_time = np.linspace(0, target_length-1, len(freq_ratios))
+    
+    # Interpolate frequency ratios and amplitudes
+    freq_interp = interp1d(curve_time, freq_ratios, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    amp_interp = interp1d(curve_time, amplitudes, kind='cubic', bounds_error=False, fill_value='extrapolate')
+    
+    freq_curve = freq_interp(time_samples)
+    amp_curve = amp_interp(time_samples)
+    
+    # NO smoothing to preserve sharp frequency transitions
+    print(f"Applying ENHANCED PHASE MODULATION Doppler shift")
+    print(f"Frequency ratio range: {np.min(freq_curve):.3f} to {np.max(freq_curve):.3f}")
+    print(f"Creating maximum frequency sweep visibility via phase modulation")
+    
+    # Enhanced phase modulation approach
+    # Create instantaneous frequency modulation that's highly visible
+    
+    # Calculate instantaneous frequency deviation from unity
+    freq_deviation = freq_curve - 1.0
+    
+    # FIXED: Removed artificial 2x scaling to maintain realistic Doppler effect
+    # Original line was: freq_deviation *= 2.0  # Make frequency changes more dramatic
+    # Now we keep the physically accurate frequency deviation
+    
+    # Calculate cumulative phase modulation
     dt = 1.0 / SR
-    inst_freq = freq_curve  # multiplier of nominal sampling progression
-    # cumulative sample index progression
-    cumulative = np.cumsum(inst_freq)
-    # normalize to original length
-    cumulative = cumulative * ((N - 1) / cumulative[-1])
+    
+    # Create phase trajectory - this directly controls instantaneous frequency
+    phase_trajectory = np.zeros(target_length)
+    for i in range(1, target_length):
+        # Instantaneous frequency = 1 + deviation
+        instantaneous_freq = 1.0 + freq_deviation[i]
+        # Add to cumulative phase
+        phase_trajectory[i] = phase_trajectory[i-1] + 2 * np.pi * instantaneous_freq * dt
+    
+    # Create complex modulation signal
+    modulation_signal = np.exp(1j * phase_trajectory)
+    
+    # Convert original audio to complex (analytic) signal
+    analytic_signal = signal.hilbert(original_audio)
+    
+    # Apply frequency modulation by multiplying with modulation signal
+    modulated_signal = analytic_signal * modulation_signal
+    
+    # Take real part to get final audio
+    output = np.real(modulated_signal)
+    
+    # Apply amplitude modulation
+    output *= amp_curve
+    
+    # Verify modulation strength
+    freq_variation = np.std(freq_deviation)
+    print(f"Frequency deviation std: {freq_variation:.3f}")
+    print(f"Phase trajectory range: {np.min(phase_trajectory):.1f} to {np.max(phase_trajectory):.1f}")
+    print(f"Should produce visible frequency sweeps with physically accurate Doppler effect")
+    
+    return output
 
-    # Build analytic signal and resample phase-modulated version
-    analytic = signal.hilbert(original)
-    # phase trajectory for each output sample: 2*pi * cumulative_index_mapping / SR
-    phase_traj = 2.0 * np.pi * cumulative / SR
-    modulation = np.exp(1j * phase_traj)
-    modulated = analytic * modulation
-    out = np.real(modulated).astype(np.float32)
-
-    # apply amplitude envelope
-    out *= amp_curve.astype(np.float32)
-
-    # normalize
-    maxv = np.max(np.abs(out)) if out.size else 1.0
-    if maxv > 0:
-        out = out / maxv * 0.98
-
-    return out
-
-
-# Front-facing functions used by app.py
 def apply_doppler_to_audio_fixed(original_audio, freq_ratios, amplitudes):
     """
-    Default method: time-domain warping (fast and produces clear sweeps).
+    Main function that applies TRUE Doppler shift with visible spectrogram sweeps
     """
-    return apply_true_doppler_shift(original_audio, freq_ratios, amplitudes)
-
+    print("=" * 60)
+    print("APPLYING TRUE DOPPLER SHIFT FOR SPECTROGRAM VISIBILITY")
+    print("=" * 60)
+    
+    # Use the variable resampling method as primary
+    result = apply_true_doppler_shift(original_audio, freq_ratios, amplitudes)
+    
+    return result
 
 def apply_doppler_to_audio_fixed_alternative(original_audio, freq_ratios, amplitudes):
     """
-    Alternative method: spectral warping (slower; good visual control).
+    Alternative using spectral method
     """
-    return apply_spectral_doppler_shift(original_audio, freq_ratios, amplitudes)
-
+    print("=" * 60)
+    print("APPLYING SPECTRAL DOPPLER SHIFT")
+    print("=" * 60)
+    
+    result = apply_spectral_doppler_shift(original_audio, freq_ratios, amplitudes)
+    
+    return result
 
 def apply_doppler_to_audio_fixed_advanced(original_audio, freq_ratios, amplitudes):
     """
-    Advanced method: phase modulation (strong, clean sweeps).
+    Advanced method using phase modulation
     """
-    return apply_phase_modulation_doppler(original_audio, freq_ratios, amplitudes)
+    print("=" * 60)
+    print("APPLYING PHASE MODULATION DOPPLER SHIFT")
+    print("=" * 60)
+    
+    result = apply_phase_modulation_doppler(original_audio, freq_ratios, amplitudes)
+    
+    return result
 
-
-# ---------------------------
-# Utilities
-# ---------------------------
 def normalize_amplitudes(amplitudes):
-    """Normalize amplitudes list/array to [0,1] range and return list."""
-    if amplitudes is None or len(amplitudes) == 0:
-        return amplitudes
-    arr = np.asarray(amplitudes, dtype=np.float32)
-    maxv = np.max(np.abs(arr))
-    if maxv <= 0:
-        return arr.tolist()
-    arr = arr / maxv
-    return arr.tolist()
-
+    """Normalize amplitudes to [0, 1] range"""
+    if amplitudes:
+        max_amp = max(amplitudes)
+        if max_amp > 0:
+            return [a / max_amp for a in amplitudes]
+    return amplitudes
 
 def save_audio(audio_data, output_path):
-    """
-    Save audio_data (1D numpy array) to output_path using SR sample rate.
-    Returns duration in seconds.
-    """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    data = np.asarray(audio_data, dtype=np.float32)
-    # prevent clipping
-    maxv = np.max(np.abs(data)) if data.size else 1.0
-    if maxv > 0:
-        data = data / maxv * 0.98
-    sf.write(output_path, data, SR, subtype='PCM_16')
-    return float(len(data) / SR)
+    """Save audio data to file"""
+    # Normalize to prevent clipping
+    max_val = np.max(np.abs(audio_data))
+    if max_val > 0:
+        audio_data = audio_data / max_val * 0.8
+    
+    sf.write(output_path, audio_data, SR)
+    return len(audio_data) / SR
 
-
-# ---------------------------
-# Debug / analysis helpers
-# ---------------------------
 def analyze_doppler_effect(original_audio, processed_audio, freq_ratios):
     """
-    Simple analysis that prints a comparison of expected vs actual dominant-frequency ratios.
-    Useful during debugging.
+    Analyze the Doppler effect to verify it's working correctly
     """
-    original = np.asarray(original_audio, dtype=np.float32)
-    processed = np.asarray(processed_audio, dtype=np.float32)
+    print("\n" + "="*50)
+    print("DOPPLER EFFECT ANALYSIS")
+    print("="*50)
+    
+    # Compute spectrograms
     n_fft = 2048
     hop_length = 512
-    orig_stft = librosa.stft(original, n_fft=n_fft, hop_length=hop_length)
-    proc_stft = librosa.stft(processed, n_fft=n_fft, hop_length=hop_length)
+    
+    orig_stft = librosa.stft(original_audio, n_fft=n_fft, hop_length=hop_length)
+    proc_stft = librosa.stft(processed_audio, n_fft=n_fft, hop_length=hop_length)
+    
     orig_mag = np.abs(orig_stft)
     proc_mag = np.abs(proc_stft)
+    
+    # Find dominant frequency over time
     freqs = librosa.fft_frequencies(sr=SR, n_fft=n_fft)
+    
+    orig_dominant_freqs = []
+    proc_dominant_freqs = []
+    
+    for frame in range(orig_mag.shape[1]):
+        # Original audio dominant frequency
+        orig_peak_idx = np.argmax(orig_mag[:, frame])
+        orig_dominant_freqs.append(freqs[orig_peak_idx])
+        
+        # Processed audio dominant frequency  
+        proc_peak_idx = np.argmax(proc_mag[:, frame])
+        proc_dominant_freqs.append(freqs[proc_peak_idx])
+    
+    orig_dominant_freqs = np.array(orig_dominant_freqs)
+    proc_dominant_freqs = np.array(proc_dominant_freqs)
+    
+    # Calculate frequency ratio over time
+    actual_freq_ratios = proc_dominant_freqs / (orig_dominant_freqs + 1e-10)
+    
+    print(f"Expected frequency ratio range: {np.min(freq_ratios):.3f} to {np.max(freq_ratios):.3f}")
+    print(f"Actual frequency ratio range: {np.min(actual_freq_ratios):.3f} to {np.max(actual_freq_ratios):.3f}")
+    
+    # Check if we see the expected frequency sweep
+    freq_variation = np.std(actual_freq_ratios)
+    print(f"Frequency variation (std): {freq_variation:.3f}")
+    
+    if freq_variation > 0.05:
+        print("✅ GOOD: Significant frequency variation detected - should see sweeps in spectrogram")
+    else:
+        print("⚠ PROBLEM: Little frequency variation - spectrogram may appear flat")
+    
+    return orig_dominant_freqs, proc_dominant_freqs, actual_freq_ratios
 
-    orig_dom = []
-    proc_dom = []
-    frames = min(orig_mag.shape[1], proc_mag.shape[1])
-    for f in range(frames):
-        orig_dom.append(freqs[np.argmax(orig_mag[:, f])])
-        proc_dom.append(freqs[np.argmax(proc_mag[:, f])])
-
-    orig_dom = np.array(orig_dom)
-    proc_dom = np.array(proc_dom)
-    # Avoid division by zero
-    ratio_actual = proc_dom / (orig_dom + 1e-10)
-    print("Expected freq ratio range:", np.min(freq_ratios), np.max(freq_ratios))
-    print("Actual dominant freq ratio range:", np.min(ratio_actual), np.max(ratio_actual))
-    return orig_dom, proc_dom, ratio_actual
-
-
-# ---------------------------
-# Quick test (when run directly)
-# ---------------------------
-if __name__ == "__main__":
-    print("audio_utils.py self-test")
-    # Generate a short test signal
+def test_doppler_with_analysis():
+    """
+    Test function with detailed analysis
+    """
+    print("Testing Doppler shift with spectrogram analysis...")
+    
+    # Create test audio
     duration = 3.0
-    t = np.linspace(0, duration, int(SR * duration), endpoint=False)
-    test_audio = (np.sin(2*np.pi*440*t) + 0.7*np.sin(2*np.pi*880*t)).astype(np.float32)
-    # sample freq ratios (simple pass-by)
-    n_points = 80
-    t_curve = np.linspace(0, 1, n_points)
-    freq_ratios = 1.2 * np.exp(-((t_curve - 0.5)/0.18)**2) + 0.8
-    amplitudes = 1.0 / (1.0 + 3.0 * (t_curve - 0.5)**2)
-    out = apply_doppler_to_audio_fixed(test_audio, freq_ratios.tolist(), amplitudes.tolist())
-    analyze_doppler_effect(test_audio, out, freq_ratios)
-    print("Test done. Output length:", len(out), "samples.")
+    t = np.linspace(0, duration, int(SR * duration))
+    
+    # Multi-harmonic test signal (like a horn)
+    test_audio = (np.sin(2 * np.pi * 440 * t) + 
+                  0.7 * np.sin(2 * np.pi * 880 * t) + 
+                  0.4 * np.sin(2 * np.pi * 1320 * t))
+    
+    # Create realistic Doppler frequency ratios (approaching then receding)
+    num_points = 100
+    t_curve = np.linspace(0, 1, num_points)
+    
+    # Simulate vehicle passing by (high freq -> low freq)
+    freq_ratios = 1.3 * np.exp(-((t_curve - 0.5) / 0.2)**2) + 0.7
+    amplitudes = 1.0 / (((t_curve - 0.5) * 40)**2 + 1)
+    
+    print(f"Test frequency ratios: {np.min(freq_ratios):.3f} to {np.max(freq_ratios):.3f}")
+    
+    # Apply Doppler effect
+    result = apply_doppler_to_audio_fixed(test_audio, freq_ratios.tolist(), amplitudes.tolist())
+    
+    # Analyze results
+    analyze_doppler_effect(test_audio, result, freq_ratios)
+    
+    return test_audio, result, freq_ratios
+
+if __name__ == "__main__":
+    # Run test with analysis
+    test_doppler_with_analysis()
