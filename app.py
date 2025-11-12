@@ -30,6 +30,13 @@ from realistic_simulation import (
 from straight_line import calculate_straight_line_doppler
 from parabola import calculate_parabola_doppler
 from bezier import calculate_bezier_doppler
+# Import 3D path calculations for drone
+from drone_3d import (
+    calculate_straight_line_3d_doppler,
+    calculate_parabola_3d_doppler,
+    calculate_bezier_3d_doppler
+)
+
 
 app = Flask(__name__)
 
@@ -92,6 +99,11 @@ def get_vehicles():
                 'id': 'train',
                 'name': 'Heavy Train',
                 'description': 'Train horn/whistle sound'
+            },
+            {
+                'id': 'drone',
+                'name': 'Drone',
+                'description': 'Drone propeller sound (3D paths)'
             }
         ]
     })
@@ -140,7 +152,55 @@ def get_paths():
         }
     ]
     
-    if vehicle_type == 'train':
+    # Handle drone 3D paths
+    if vehicle_type == 'drone':
+        # Return 3D versions with z-coordinates
+        all_paths_3d = [
+            {
+                'id': 'straight',
+                'name': 'Straight Line 3D',
+                'description': 'Drone moves in a 3D straight line',
+                'parameters': [
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
+                    {'name': 'angle_xy', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45},
+                    {'name': 'angle_z', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45}
+                ]
+            },
+            {
+                'id': 'parabola',
+                'name': 'Parabolic Path 3D',
+                'description': 'Drone follows a 3D parabolic trajectory',
+                'parameters': [
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                    {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1, 'min': 0.01, 'max': 1},
+                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
+                    {'name': 'z_offset', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 0, 'max': 100}
+                ]
+            },
+            {
+                'id': 'bezier',
+                'name': 'Bezier Curve 3D',
+                'description': 'Drone follows a custom 3D Bezier curve',
+                'parameters': [
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                    {'name': 'x0', 'type': 'number', 'unit': 'm', 'default': -30},
+                    {'name': 'y0', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'z0', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'x1', 'type': 'number', 'unit': 'm', 'default': -10},
+                    {'name': 'y1', 'type': 'number', 'unit': 'm', 'default': 20},
+                    {'name': 'z1', 'type': 'number', 'unit': 'm', 'default': 20},
+                    {'name': 'x2', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'y2', 'type': 'number', 'unit': 'm', 'default': 20},
+                    {'name': 'z2', 'type': 'number', 'unit': 'm', 'default': 20},
+                    {'name': 'x3', 'type': 'number', 'unit': 'm', 'default': 30},
+                    {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'z3', 'type': 'number', 'unit': 'm', 'default': 10}
+                ]
+            }
+        ]
+        return jsonify({'paths': all_paths_3d})
+    elif vehicle_type == 'train':
         filtered_paths = [p for p in all_paths if p['id'] == 'straight']
     else:
         filtered_paths = all_paths
@@ -317,6 +377,25 @@ def process_simulation(job_id, path, vehicle_type, shift_method, audio_duration,
             'y3': float(data.get('y3', 20))
         })
     
+    # Handle 3D parameters for drone
+    if vehicle_type == 'drone':
+        if path == 'straight':
+            path_params.update({
+                'angle_xy': float(data.get('angle_xy', 0)),
+                'angle_z': float(data.get('angle_z', 0))
+            })
+        elif path == 'parabola':
+            path_params.update({
+                'z_offset': float(data.get('z_offset', 10))
+            })
+        elif path == 'bezier':
+            path_params.update({
+                'z0': float(data.get('z0', 10)),
+                'z1': float(data.get('z1', 20)),
+                'z2': float(data.get('z2', 20)),
+                'z3': float(data.get('z3', 10))
+            })
+    
     # Calculate Doppler effect
     try:
         if acceleration_mode in ['custom', 'manual']:
@@ -326,6 +405,69 @@ def process_simulation(job_id, path, vehicle_type, shift_method, audio_duration,
             )
         else:
             # Perfect physics mode
+            if vehicle_type == 'drone':
+                # Use 3D calculations for drone
+                if path == 'straight':
+                    freq_ratios, amplitudes = calculate_straight_line_3d_doppler(
+                        path_params['speed'], path_params['h'], 
+                        path_params.get('angle_xy', 0), path_params.get('angle_z', 0), audio_duration
+                    )
+                elif path == 'parabola':
+                    freq_ratios, amplitudes = calculate_parabola_3d_doppler(
+                        path_params['speed'], path_params['a'], 
+                        path_params['h'], path_params.get('z_offset', 10), audio_duration
+                    )
+                elif path == 'bezier':
+                    freq_ratios, amplitudes = calculate_bezier_3d_doppler(
+                        path_params['speed'], 
+                        path_params['x0'], path_params['x1'], path_params['x2'], path_params['x3'],
+                        path_params['y0'], path_params['y1'], path_params['y2'], path_params['y3'],
+                        path_params['z0'], path_params['z1'], path_params['z2'], path_params['z3'],
+                        audio_duration
+                    )
+            else:
+                # Use 2D calculations for car/train
+                if path == 'straight':
+                    freq_ratios, amplitudes = calculate_straight_line_doppler(
+                        path_params['speed'], path_params['h'], 
+                        path_params.get('angle', 0), audio_duration
+                    )
+                elif path == 'parabola':
+                    freq_ratios, amplitudes = calculate_parabola_doppler(
+                        path_params['speed'], path_params['a'], 
+                        path_params['h'], audio_duration
+                    )
+                elif path == 'bezier':
+                    freq_ratios, amplitudes = calculate_bezier_doppler(
+                        path_params['speed'], path_params['x0'], path_params['x1'], 
+                        path_params['x2'], path_params['x3'], path_params['y0'], 
+                        path_params['y1'], path_params['y2'], path_params['y3'], audio_duration
+                    )
+    except Exception as e:
+        print(f"Enhanced calculation failed: {e}, falling back to perfect physics")
+        
+        if vehicle_type == 'drone':
+            # 3D fallback for drone
+            if path == 'straight':
+                freq_ratios, amplitudes = calculate_straight_line_3d_doppler(
+                    path_params['speed'], path_params['h'], 
+                    path_params.get('angle_xy', 0), path_params.get('angle_z', 0), audio_duration
+                )
+            elif path == 'parabola':
+                freq_ratios, amplitudes = calculate_parabola_3d_doppler(
+                    path_params['speed'], path_params['a'], 
+                    path_params['h'], path_params.get('z_offset', 10), audio_duration
+                )
+            elif path == 'bezier':
+                freq_ratios, amplitudes = calculate_bezier_3d_doppler(
+                    path_params['speed'], 
+                    path_params['x0'], path_params['x1'], path_params['x2'], path_params['x3'],
+                    path_params['y0'], path_params['y1'], path_params['y2'], path_params['y3'],
+                    path_params['z0'], path_params['z1'], path_params['z2'], path_params['z3'],
+                    audio_duration
+                )
+        else:
+            # 2D fallback for car/train
             if path == 'straight':
                 freq_ratios, amplitudes = calculate_straight_line_doppler(
                     path_params['speed'], path_params['h'], 
@@ -342,25 +484,6 @@ def process_simulation(job_id, path, vehicle_type, shift_method, audio_duration,
                     path_params['x2'], path_params['x3'], path_params['y0'], 
                     path_params['y1'], path_params['y2'], path_params['y3'], audio_duration
                 )
-    except Exception as e:
-        print(f"Enhanced calculation failed: {e}, falling back to perfect physics")
-        
-        if path == 'straight':
-            freq_ratios, amplitudes = calculate_straight_line_doppler(
-                path_params['speed'], path_params['h'], 
-                path_params.get('angle', 0), audio_duration
-            )
-        elif path == 'parabola':
-            freq_ratios, amplitudes = calculate_parabola_doppler(
-                path_params['speed'], path_params['a'], 
-                path_params['h'], audio_duration
-            )
-        elif path == 'bezier':
-            freq_ratios, amplitudes = calculate_bezier_doppler(
-                path_params['speed'], path_params['x0'], path_params['x1'], 
-                path_params['x2'], path_params['x3'], path_params['y0'], 
-                path_params['y1'], path_params['y2'], path_params['y3'], audio_duration
-            )
     
     # Normalize amplitudes
     amplitudes = normalize_amplitudes(amplitudes)
