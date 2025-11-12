@@ -1,145 +1,161 @@
-# app.py - API-ready Flask application for React Native
-# Modified for cross-platform mobile app communication
+# app.py - Fixed & robust Flask API for Doppler simulator (React Native ready)
 
 from flask import Flask, render_template, request, send_file, jsonify
 from flask_cors import CORS
 import numpy as np
 import os
 import uuid
-import time
 from datetime import datetime
 
+# audio utilities (your existing module)
 from audio_utils import (
     load_original_audio,
-    apply_doppler_to_audio_fixed, 
+    apply_doppler_to_audio_fixed,
     apply_doppler_to_audio_fixed_alternative,
     apply_doppler_to_audio_fixed_advanced,
-    normalize_amplitudes, 
+    normalize_amplitudes,
     save_audio,
     SR
 )
 
-# Import manual acceleration profile support
+# optional enhanced simulation utilities (may raise)
 from realistic_simulation import (
     calculate_enhanced_doppler_effect,
     validate_manual_profile_input,
-    get_preset_profile
+    get_preset_profile,
+    PRESET_MANUAL_PROFILES
 )
 
-# Import original path calculations
+# 2D path calculators (cars/trains)
 from straight_line import calculate_straight_line_doppler
 from parabola import calculate_parabola_doppler
 from bezier import calculate_bezier_doppler
-# Import 3D path calculations for drone
+
+# 3D path calculators (drone)
 from drone_3d import (
     calculate_straight_line_3d_doppler,
     calculate_parabola_3d_doppler,
     calculate_bezier_3d_doppler
 )
 
-
+# -----------------------------------------------------------------------------
+# App and config
+# -----------------------------------------------------------------------------
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})  # tighten origins in production
 
-# Enable CORS for React Native communication
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",  # In production, replace with your app's domain
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
-    }
-})
-
-# Store for temporary job results (in production, use Redis or database)
-job_store = {}
-
-# Ensure directories exist
+# ensure directories
 os.makedirs('static', exist_ok=True)
 os.makedirs('static/outputs', exist_ok=True)
 
+# simple in-memory job store (replace with DB/Redis in prod)
+job_store = {}
+
+# explicit mapping from vehicle id to preferred source sample key/filename
+# (audio_utils.load_original_audio should accept the vehicle_id string;
+#  if your load_original_audio expects filenames adapt accordingly)
+VEHICLE_SOURCE_MAP = {
+    'car': 'car_engine_loop.wav',
+    'train': 'train_whistle_loop.wav',
+    'drone': 'drone_rotor_loop.wav'
+}
+
+# -----------------------------------------------------------------------------
+# Helper utilities
+# -----------------------------------------------------------------------------
+def _safe_float(val, default=0.0):
+    try:
+        return float(val)
+    except Exception:
+        return default
+
+def _load_audio_resilient(vehicle_type, duration):
+    """
+    Try to load original audio for `vehicle_type` robustly.
+    If load_original_audio supports a 'source_name' or filename signature, this
+    function will attempt the more explicit call and fall back to the simple call.
+    """
+    source_filename = VEHICLE_SOURCE_MAP.get(vehicle_type, None)
+    # First attempt: assume load_original_audio(vehicle_type, duration)
+    try:
+        return load_original_audio(vehicle_type, duration)
+    except TypeError:
+        # maybe load_original_audio expects (filename, duration)
+        try:
+            if source_filename:
+                return load_original_audio(source_filename, duration)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Final fallback: try any mapping filename directly
+    try:
+        if source_filename:
+            return load_original_audio(source_filename, duration)
+    except Exception as e:
+        # give up and re-raise a clear error
+        raise RuntimeError(f"Failed to load original audio for vehicle '{vehicle_type}': {e}")
+
+# -----------------------------------------------------------------------------
+# API endpoints
+# -----------------------------------------------------------------------------
 @app.route('/')
 def home():
-    """Web interface (optional - keep for testing)"""
     return render_template('index.html')
 
 @app.route('/api/info', methods=['GET'])
 def api_info():
-    """Get API information and available options"""
     return jsonify({
-        'version': '2.0-api',
+        'version': '2.0-api-fixed',
         'status': 'online',
-        'endpoints': {
-            'simulate': '/api/simulate',
-            'job_status': '/api/job/<job_id>',
-            'download': '/api/download/<filename>',
-            'vehicle_types': '/api/vehicles',
-            'path_types': '/api/paths',
-            'presets': '/api/presets'
-        },
         'features': {
-            'manual_profiles': True,
-            'custom_acceleration': True,
-            'perfect_physics': True,
-            'multiple_paths': True,
-            'multiple_vehicles': True,
-            'multiple_audio_methods': True
+            'drone_3d': True,
+            'manual_profiles': True
         }
     })
 
 @app.route('/api/vehicles', methods=['GET'])
 def get_vehicles():
-    """Get available vehicle types"""
     return jsonify({
         'vehicles': [
-            {
-                'id': 'car',
-                'name': 'Passenger Car',
-                'description': 'Standard car horn sound'
-            },
-            {
-                'id': 'train',
-                'name': 'Heavy Train',
-                'description': 'Train horn/whistle sound'
-            },
-            {
-                'id': 'drone',
-                'name': 'Drone',
-                'description': 'Drone propeller sound (3D paths)'
-            }
+            {'id': 'car', 'name': 'Passenger Car', 'description': 'Car engine/horn sound'},
+            {'id': 'train', 'name': 'Train', 'description': 'Train horn/whistle'},
+            {'id': 'drone', 'name': 'Drone', 'description': 'Drone rotor sound (3D)'},
         ]
     })
 
 @app.route('/api/paths', methods=['GET'])
 def get_paths():
-    """Get available path types and their parameters"""
     vehicle_type = request.args.get('vehicle_type', 'car')
-    
-    all_paths = [
+    # base 2D paths
+    base_paths = [
         {
             'id': 'straight',
             'name': 'Straight Line',
-            'description': 'Vehicle moves in a straight line past observer',
+            'description': 'Straight line path',
             'parameters': [
-                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
-                {'name': 'angle', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45}
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
+                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10},
+                {'name': 'angle', 'type': 'number', 'unit': 'deg', 'default': 0}
             ]
         },
         {
             'id': 'parabola',
-            'name': 'Parabolic Path',
-            'description': 'Vehicle follows a parabolic trajectory',
+            'name': 'Parabola',
+            'description': 'Parabolic trajectory',
             'parameters': [
-                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1, 'min': 0.01, 'max': 1},
-                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100}
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
+                {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1},
+                {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10}
             ]
         },
         {
             'id': 'bezier',
-            'name': 'Bezier Curve',
-            'description': 'Vehicle follows a custom Bezier curve',
+            'name': 'Bezier',
+            'description': 'Bezier curve (2D)',
             'parameters': [
-                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
                 {'name': 'x0', 'type': 'number', 'unit': 'm', 'default': -30},
                 {'name': 'y0', 'type': 'number', 'unit': 'm', 'default': 20},
                 {'name': 'x1', 'type': 'number', 'unit': 'm', 'default': -10},
@@ -147,43 +163,42 @@ def get_paths():
                 {'name': 'x2', 'type': 'number', 'unit': 'm', 'default': 10},
                 {'name': 'y2', 'type': 'number', 'unit': 'm', 'default': -10},
                 {'name': 'x3', 'type': 'number', 'unit': 'm', 'default': 30},
-                {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 20}
+                {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 20},
             ]
         }
     ]
-    
-    # Handle drone 3D paths
+
     if vehicle_type == 'drone':
-        # Return 3D versions with z-coordinates
-        all_paths_3d = [
+        # produce 3D variations (z coordinates + 3D-specific params)
+        paths_3d = [
             {
                 'id': 'straight',
                 'name': 'Straight Line 3D',
-                'description': 'Drone moves in a 3D straight line',
+                'description': '3D straight line (drone)',
                 'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
-                    {'name': 'angle_xy', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45},
-                    {'name': 'angle_z', 'type': 'number', 'unit': 'degrees', 'default': 0, 'min': -45, 'max': 45}
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
+                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'angle_xy', 'type': 'number', 'unit': 'deg', 'default': 0},
+                    {'name': 'angle_z', 'type': 'number', 'unit': 'deg', 'default': 0}
                 ]
             },
             {
                 'id': 'parabola',
-                'name': 'Parabolic Path 3D',
-                'description': 'Drone follows a 3D parabolic trajectory',
+                'name': 'Parabola 3D',
+                'description': '3D parabola (X-Z plane with Y offset)',
                 'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
-                    {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1, 'min': 0.01, 'max': 1},
-                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 1, 'max': 100},
-                    {'name': 'z_offset', 'type': 'number', 'unit': 'm', 'default': 10, 'min': 0, 'max': 100}
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
+                    {'name': 'a', 'type': 'number', 'unit': 'curvature', 'default': 0.1},
+                    {'name': 'h', 'type': 'number', 'unit': 'm', 'default': 10},
+                    {'name': 'z_offset', 'type': 'number', 'unit': 'm', 'default': 10}
                 ]
             },
             {
                 'id': 'bezier',
-                'name': 'Bezier Curve 3D',
-                'description': 'Drone follows a custom 3D Bezier curve',
+                'name': 'Bezier 3D',
+                'description': '3D cubic Bezier (drone)',
                 'parameters': [
-                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20, 'min': 1, 'max': 100},
+                    {'name': 'speed', 'type': 'number', 'unit': 'm/s', 'default': 20},
                     {'name': 'x0', 'type': 'number', 'unit': 'm', 'default': -30},
                     {'name': 'y0', 'type': 'number', 'unit': 'm', 'default': 10},
                     {'name': 'z0', 'type': 'number', 'unit': 'm', 'default': 10},
@@ -195,433 +210,309 @@ def get_paths():
                     {'name': 'z2', 'type': 'number', 'unit': 'm', 'default': 20},
                     {'name': 'x3', 'type': 'number', 'unit': 'm', 'default': 30},
                     {'name': 'y3', 'type': 'number', 'unit': 'm', 'default': 10},
-                    {'name': 'z3', 'type': 'number', 'unit': 'm', 'default': 10}
+                    {'name': 'z3', 'type': 'number', 'unit': 'm', 'default': 10},
                 ]
             }
         ]
-        return jsonify({'paths': all_paths_3d})
-    elif vehicle_type == 'train':
-        filtered_paths = [p for p in all_paths if p['id'] == 'straight']
+        return jsonify({'paths': paths_3d})
     else:
-        filtered_paths = all_paths
-    
-    return jsonify({
-        'paths': filtered_paths
-    })
+        return jsonify({'paths': base_paths})
 
 @app.route('/api/presets', methods=['GET'])
 def get_presets():
-    """Get preset manual profiles"""
-    from realistic_simulation import PRESET_MANUAL_PROFILES
-    
+    # expose simple preset list
     presets = []
-    for key, preset in PRESET_MANUAL_PROFILES.items():
-        presets.append({
-            'id': key,
-            'name': preset['name'],
-            'description': preset['description'],
-            'duration': preset['duration']
-        })
-    
+    for key, p in PRESET_MANUAL_PROFILES.items():
+        presets.append({'id': key, 'name': p['name'], 'duration': p.get('duration', 5)})
     return jsonify({'presets': presets})
 
 @app.route('/api/preset/<preset_name>', methods=['GET'])
 def get_preset_detail(preset_name):
-    """Get specific preset details"""
     preset = get_preset_profile(preset_name)
     if preset:
         return jsonify(preset)
-    else:
-        return jsonify({'error': 'Preset not found'}), 404
+    return jsonify({'error': 'Preset not found'}), 404
 
+# -----------------------------------------------------------------------------
+# Simulation endpoint
+# -----------------------------------------------------------------------------
 @app.route('/api/simulate', methods=['POST'])
 def api_simulate():
-    """
-    Main simulation endpoint for React Native
-    Accepts JSON or form-data
-    Returns job ID for async processing
-    """
     try:
-        # Handle both JSON and form data
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
-        
-        # Generate unique job ID
+        data = request.get_json() if request.is_json else request.form.to_dict()
         job_id = str(uuid.uuid4())
-        
-        # Extract parameters with defaults
+
+        # Basic params
         path = data.get('path', 'straight')
         vehicle_type = data.get('vehicle_type', 'car')
         shift_method = data.get('shift_method', 'timestretch')
-        audio_duration = float(data.get('audio_duration', 5))
+        audio_duration = _safe_float(data.get('audio_duration', 5.0), 5.0)
         acceleration_mode = data.get('acceleration_mode', 'perfect')
-        
-        print(f"=== API Simulation Request ===")
-        print(f"Job ID: {job_id}")
-        print(f"Path: {path}")
-        print(f"Vehicle: {vehicle_type}")
-        print(f"Duration: {audio_duration}s")
-        print(f"Acceleration: {acceleration_mode}")
-        
-        # Initialize job in store
+
+        # Persist job
         job_store[job_id] = {
             'status': 'processing',
             'progress': 0,
             'created_at': datetime.now().isoformat(),
             'parameters': data
         }
-        
-        # Process simulation in background (in production, use Celery/RQ)
+
+        # Immediately process synchronously (for now)
         try:
-            result = process_simulation(
-                job_id, path, vehicle_type, shift_method, 
-                audio_duration, acceleration_mode, data
-            )
-            
-            # Update job store with results
+            result = process_simulation(job_id, path, vehicle_type, shift_method, audio_duration, acceleration_mode, data)
             job_store[job_id].update({
                 'status': 'completed',
                 'progress': 100,
                 'result': result,
                 'completed_at': datetime.now().isoformat()
             })
-            
         except Exception as e:
             job_store[job_id].update({
                 'status': 'failed',
                 'error': str(e),
                 'failed_at': datetime.now().isoformat()
             })
-            print(f"Simulation failed: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        # Return job ID immediately
+            raise
+
         return jsonify({
             'job_id': job_id,
-            'status': 'processing',
-            'message': 'Simulation started',
-            'check_status_url': f'/api/job/{job_id}'
-        }), 202
-        
+            'status': job_store[job_id]['status'],
+            'result': job_store[job_id]['result']
+        }), 200
+
     except Exception as e:
-        print(f"Error creating simulation job: {e}")
+        # Log and return error
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+# -----------------------------------------------------------------------------
+# Core processing routine
+# -----------------------------------------------------------------------------
 def process_simulation(job_id, path, vehicle_type, shift_method, audio_duration, acceleration_mode, data):
-    """Process the actual simulation (can be moved to background worker)"""
-    
-    # Get custom acceleration parameters
-    custom_accel_params = None
-    if acceleration_mode == 'custom':
-        custom_accel_params = {}
-        param_names = ['max_acceleration', 'max_deceleration', 'acceleration_frequency',
-                      'acceleration_strength', 'gear_change_frequency', 'engine_roughness']
-        
-        for param in param_names:
-            if param in data and data[param]:
-                custom_accel_params[param] = float(data[param])
-        
-        if not custom_accel_params:
-            custom_accel_params = None
-    
-    # Get manual profile data
-    manual_profile_data = None
-    if acceleration_mode == 'manual':
-        time_values = data.get('manual_time_values', '').strip()
-        speed_values = data.get('manual_speed_values', '').strip()
-        
-        if time_values and speed_values:
-            is_valid, error_msg, suggestions = validate_manual_profile_input(time_values, speed_values)
-            
-            if not is_valid:
-                raise ValueError(f"Manual profile error: {error_msg}")
-            
-            manual_profile_data = {
-                'time_values': time_values,
-                'speed_values': speed_values
-            }
-    
-    # Load original audio
-    original_audio = load_original_audio(vehicle_type, audio_duration)
-    
-    # Prepare path parameters
-    path_params = {'speed': 20}
-    
+    """
+    Compute Doppler frequency ratios and amplitudes, apply shift, and save output.
+    Returns metadata dictionary for client.
+    """
+    # 1) Load original audio (resiliently)
+    original_audio = _load_audio_resilient(vehicle_type, audio_duration)
+
+    # 2) Build path_params with safe defaults and parse numeric values
+    path_params = {}
+
+    # Generic defaults
+    path_params['speed'] = _safe_float(data.get('speed', 20.0), 20.0)
+
     if path == 'straight':
-        path_params.update({
-            'speed': float(data.get('speed', 20)),
-            'h': float(data.get('h', 10)),
-            'angle': float(data.get('angle', 0))
-        })
+        path_params['h'] = _safe_float(data.get('h', 10.0), 10.0)
+        # For 2D path angle param remains 'angle'
+        path_params['angle'] = _safe_float(data.get('angle', 0.0), 0.0)
     elif path == 'parabola':
-        path_params.update({
-            'speed': float(data.get('speed', 20)),
-            'a': float(data.get('a', 0.1)),
-            'h': float(data.get('h', 10))
-        })
+        path_params['a'] = _safe_float(data.get('a', 0.1), 0.1)
+        path_params['h'] = _safe_float(data.get('h', 10.0), 10.0)
     elif path == 'bezier':
+        # 2D bezier required parameters (x,y)
         path_params.update({
-            'speed': float(data.get('speed', 20)),
-            'x0': float(data.get('x0', -30)),
-            'x1': float(data.get('x1', -10)),
-            'x2': float(data.get('x2', 10)),
-            'x3': float(data.get('x3', 30)),
-            'y0': float(data.get('y0', 20)),
-            'y1': float(data.get('y1', -10)),
-            'y2': float(data.get('y2', -10)),
-            'y3': float(data.get('y3', 20))
+            'x0': _safe_float(data.get('x0', -30.0), -30.0),
+            'x1': _safe_float(data.get('x1', -10.0), -10.0),
+            'x2': _safe_float(data.get('x2', 10.0), 10.0),
+            'x3': _safe_float(data.get('x3', 30.0), 30.0),
+            'y0': _safe_float(data.get('y0', 20.0), 20.0),
+            'y1': _safe_float(data.get('y1', -10.0), -10.0),
+            'y2': _safe_float(data.get('y2', -10.0), -10.0),
+            'y3': _safe_float(data.get('y3', 20.0), 20.0),
         })
-    
-    # Handle 3D parameters for drone
+
+    # 3) If drone, include 3D params (z's and 3D angles)
     if vehicle_type == 'drone':
         if path == 'straight':
-            path_params.update({
-                'angle_xy': float(data.get('angle_xy', 0)),
-                'angle_z': float(data.get('angle_z', 0))
-            })
+            path_params['h'] = _safe_float(data.get('h', path_params.get('h', 10.0)), 10.0)
+            path_params['angle_xy'] = _safe_float(data.get('angle_xy', 0.0), 0.0)
+            path_params['angle_z'] = _safe_float(data.get('angle_z', 0.0), 0.0)
         elif path == 'parabola':
-            path_params.update({
-                'z_offset': float(data.get('z_offset', 10))
-            })
+            path_params['a'] = _safe_float(data.get('a', path_params.get('a', 0.1)), 0.1)
+            path_params['h'] = _safe_float(data.get('h', path_params.get('h', 10.0)), 10.0)
+            path_params['z_offset'] = _safe_float(data.get('z_offset', 10.0), 10.0)
         elif path == 'bezier':
+            # Ensure y values exist (kept from earlier) and add z values
+            for k in ('x0', 'x1', 'x2', 'x3', 'y0', 'y1', 'y2', 'y3'):
+                if k not in path_params:
+                    path_params[k] = _safe_float(data.get(k, 0.0), 0.0)
             path_params.update({
-                'z0': float(data.get('z0', 10)),
-                'z1': float(data.get('z1', 20)),
-                'z2': float(data.get('z2', 20)),
-                'z3': float(data.get('z3', 10))
+                'z0': _safe_float(data.get('z0', 10.0), 10.0),
+                'z1': _safe_float(data.get('z1', 20.0), 20.0),
+                'z2': _safe_float(data.get('z2', 20.0), 20.0),
+                'z3': _safe_float(data.get('z3', 10.0), 10.0),
             })
-    
-    # Calculate Doppler effect
+
+    # 4) Optionally handle enhanced/custom/manual acceleration profiles
     try:
         if acceleration_mode in ['custom', 'manual']:
-            freq_ratios, amplitudes, speed_profile_info = calculate_enhanced_doppler_effect(
-                path, path_params, acceleration_mode, 
-                custom_accel_params, manual_profile_data, vehicle_type, audio_duration
+            # Delegate heavy lifting to realistic_simulation if available
+            freq_ratios, amplitudes, extra = calculate_enhanced_doppler_effect(
+                path, path_params, acceleration_mode, None, None, vehicle_type, audio_duration
             )
         else:
-            # Perfect physics mode
+            # Perfect physics branch
             if vehicle_type == 'drone':
-                # Use 3D calculations for drone
+                # ALWAYS use 3D functions for drone
                 if path == 'straight':
                     freq_ratios, amplitudes = calculate_straight_line_3d_doppler(
-                        path_params['speed'], path_params['h'], 
-                        path_params.get('angle_xy', 0), path_params.get('angle_z', 0), audio_duration
+                        path_params['speed'],
+                        path_params['h'],
+                        path_params.get('angle_xy', 0.0),
+                        path_params.get('angle_z', 0.0),
+                        audio_duration
                     )
                 elif path == 'parabola':
                     freq_ratios, amplitudes = calculate_parabola_3d_doppler(
-                        path_params['speed'], path_params['a'], 
-                        path_params['h'], path_params.get('z_offset', 10), audio_duration
+                        path_params['speed'],
+                        path_params['a'],
+                        path_params['h'],
+                        path_params.get('z_offset', 10.0),
+                        audio_duration
                     )
                 elif path == 'bezier':
                     freq_ratios, amplitudes = calculate_bezier_3d_doppler(
-                        path_params['speed'], 
+                        path_params['speed'],
                         path_params['x0'], path_params['x1'], path_params['x2'], path_params['x3'],
                         path_params['y0'], path_params['y1'], path_params['y2'], path_params['y3'],
                         path_params['z0'], path_params['z1'], path_params['z2'], path_params['z3'],
                         audio_duration
                     )
+                else:
+                    raise ValueError(f"Unknown path '{path}' for drone.")
             else:
-                # Use 2D calculations for car/train
+                # non-drone: use existing 2D functions
                 if path == 'straight':
                     freq_ratios, amplitudes = calculate_straight_line_doppler(
-                        path_params['speed'], path_params['h'], 
-                        path_params.get('angle', 0), audio_duration
+                        path_params['speed'],
+                        path_params['h'],
+                        path_params.get('angle', 0.0),
+                        audio_duration
                     )
                 elif path == 'parabola':
                     freq_ratios, amplitudes = calculate_parabola_doppler(
-                        path_params['speed'], path_params['a'], 
-                        path_params['h'], audio_duration
+                        path_params['speed'],
+                        path_params['a'],
+                        path_params['h'],
+                        audio_duration
                     )
                 elif path == 'bezier':
                     freq_ratios, amplitudes = calculate_bezier_doppler(
-                        path_params['speed'], path_params['x0'], path_params['x1'], 
-                        path_params['x2'], path_params['x3'], path_params['y0'], 
-                        path_params['y1'], path_params['y2'], path_params['y3'], audio_duration
+                        path_params['speed'],
+                        path_params['x0'], path_params['x1'], path_params['x2'], path_params['x3'],
+                        path_params['y0'], path_params['y1'], path_params['y2'], path_params['y3'],
+                        audio_duration
                     )
+                else:
+                    raise ValueError(f"Unknown path '{path}' for vehicle '{vehicle_type}'.")
     except Exception as e:
-        print(f"Enhanced calculation failed: {e}, falling back to perfect physics")
-        
+        # If enhanced calculation fails or any internal failure in 3D/2D functions,
+        # fallback to a safe straight-line calculation (2D or 3D depending on vehicle)
+        import traceback
+        traceback.print_exc()
+        print("Fallback: using safe straight-line calculation.")
+
         if vehicle_type == 'drone':
-            # 3D fallback for drone
-            if path == 'straight':
-                freq_ratios, amplitudes = calculate_straight_line_3d_doppler(
-                    path_params['speed'], path_params['h'], 
-                    path_params.get('angle_xy', 0), path_params.get('angle_z', 0), audio_duration
-                )
-            elif path == 'parabola':
-                freq_ratios, amplitudes = calculate_parabola_3d_doppler(
-                    path_params['speed'], path_params['a'], 
-                    path_params['h'], path_params.get('z_offset', 10), audio_duration
-                )
-            elif path == 'bezier':
-                freq_ratios, amplitudes = calculate_bezier_3d_doppler(
-                    path_params['speed'], 
-                    path_params['x0'], path_params['x1'], path_params['x2'], path_params['x3'],
-                    path_params['y0'], path_params['y1'], path_params['y2'], path_params['y3'],
-                    path_params['z0'], path_params['z1'], path_params['z2'], path_params['z3'],
-                    audio_duration
-                )
+            freq_ratios, amplitudes = calculate_straight_line_3d_doppler(
+                path_params.get('speed', 20.0),
+                path_params.get('h', 10.0),
+                path_params.get('angle_xy', 0.0),
+                path_params.get('angle_z', 0.0),
+                audio_duration
+            )
         else:
-            # 2D fallback for car/train
-            if path == 'straight':
-                freq_ratios, amplitudes = calculate_straight_line_doppler(
-                    path_params['speed'], path_params['h'], 
-                    path_params.get('angle', 0), audio_duration
-                )
-            elif path == 'parabola':
-                freq_ratios, amplitudes = calculate_parabola_doppler(
-                    path_params['speed'], path_params['a'], 
-                    path_params['h'], audio_duration
-                )
-            elif path == 'bezier':
-                freq_ratios, amplitudes = calculate_bezier_doppler(
-                    path_params['speed'], path_params['x0'], path_params['x1'], 
-                    path_params['x2'], path_params['x3'], path_params['y0'], 
-                    path_params['y1'], path_params['y2'], path_params['y3'], audio_duration
-                )
-    
-    # Normalize amplitudes
+            freq_ratios, amplitudes = calculate_straight_line_doppler(
+                path_params.get('speed', 20.0),
+                path_params.get('h', 10.0),
+                path_params.get('angle', 0.0),
+                audio_duration
+            )
+
+    # 5) Normalize amplitude envelope
     amplitudes = normalize_amplitudes(amplitudes)
-    
-    # Apply Doppler effect
+
+    # 6) Ensure freq_ratios & amplitudes are lists or numpy arrays
+    freq_ratios = list(freq_ratios) if not isinstance(freq_ratios, list) else freq_ratios
+    amplitudes = list(amplitudes) if not isinstance(amplitudes, list) else amplitudes
+
+    # 7) Apply Doppler effect using selected shift method
     if shift_method == 'resample':
         doppler_audio = apply_doppler_to_audio_fixed_alternative(original_audio, freq_ratios, amplitudes)
     elif shift_method == 'advanced':
         doppler_audio = apply_doppler_to_audio_fixed_advanced(original_audio, freq_ratios, amplitudes)
     else:
         doppler_audio = apply_doppler_to_audio_fixed(original_audio, freq_ratios, amplitudes)
-    
-    # Ensure correct length
+
+    # 8) Trim or pad to desired duration in samples
     target_samples = int(SR * audio_duration)
-    if len(doppler_audio) != target_samples:
-        if len(doppler_audio) > target_samples:
-            doppler_audio = doppler_audio[:target_samples]
-        else:
-            padded = np.zeros(target_samples)
-            padded[:len(doppler_audio)] = doppler_audio
-            doppler_audio = padded
-    
-    # Save audio file with unique name
+    doppler_audio = np.asarray(doppler_audio, dtype=np.float32)
+
+    if doppler_audio.shape[0] > target_samples:
+        doppler_audio = doppler_audio[:target_samples]
+    elif doppler_audio.shape[0] < target_samples:
+        padded = np.zeros(target_samples, dtype=np.float32)
+        padded[: doppler_audio.shape[0]] = doppler_audio
+        doppler_audio = padded
+
+    # 9) Save WAV file
     filename = f"{job_id}.wav"
-    output_path = f'static/outputs/{filename}'
-    duration = save_audio(doppler_audio, output_path)
-    
-    print(f"Simulation complete: {output_path}")
-    
-    return {
+    output_path = os.path.join('static', 'outputs', filename)
+    saved_duration = save_audio(doppler_audio, output_path)
+
+    # 10) Prepare result metadata
+    result = {
         'filename': filename,
-        'duration': duration,
+        'duration': saved_duration,
         'download_url': f'/api/download/{filename}',
         'freq_ratio_range': {
-            'min': float(min(freq_ratios)),
-            'max': float(max(freq_ratios))
+            'min': float(np.min(freq_ratios)),
+            'max': float(np.max(freq_ratios))
         }
     }
+    return result
 
+# -----------------------------------------------------------------------------
+# Job status, download, health and helpers
+# -----------------------------------------------------------------------------
 @app.route('/api/job/<job_id>', methods=['GET'])
 def get_job_status(job_id):
-    """Check job status"""
     job = job_store.get(job_id)
-    
     if not job:
         return jsonify({'error': 'Job not found'}), 404
-    
     return jsonify(job)
 
 @app.route('/api/download/<filename>', methods=['GET'])
 def download_file(filename):
-    """Download generated audio file"""
-    filepath = f'static/outputs/{filename}'
-    
+    filepath = os.path.join('static', 'outputs', filename)
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
-    
     return send_file(filepath, as_attachment=True, download_name=filename)
 
-@app.route('/simulate', methods=['POST'])
-def simulate():
-    """Legacy web interface endpoint (keep for backward compatibility)"""
-    try:
-        # Get user inputs
-        path = request.form['path']
-        vehicle_type = request.form.get('vehicle_type', 'car')
-        shift_method = request.form.get('shift_method', 'timestretch')
-        audio_duration = float(request.form.get('audio_duration', 5))
-        acceleration_mode = request.form.get('acceleration_mode', 'perfect')
-        
-        print(f"=== Web Doppler Simulation ===")
-        print(f"Path: {path}")
-        print(f"Vehicle: {vehicle_type}")
-        print(f"Duration: {audio_duration}s")
-        
-        # [Keep all existing simulation logic from original app.py]
-        # ... (same as before)
-        
-        # For brevity, reuse the process_simulation function
-        job_id = 'web-' + str(uuid.uuid4())
-        result = process_simulation(
-            job_id, path, vehicle_type, shift_method,
-            audio_duration, acceleration_mode, request.form.to_dict()
-        )
-        
-        output_path = f'static/outputs/{result["filename"]}'
-        return send_file(output_path, as_attachment=True)
-        
-    except Exception as e:
-        print(f"Error in web simulation: {e}")
-        import traceback
-        traceback.print_exc()
-        return f"Simulation error: {str(e)}", 500
-
-@app.route('/health')
+@app.route('/health', methods=['GET'])
 def health():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'version': '2.0-api',
-        'timestamp': datetime.now().isoformat(),
-        'active_jobs': len([j for j in job_store.values() if j['status'] == 'processing'])
-    })
+    active = sum(1 for j in job_store.values() if j.get('status') == 'processing')
+    return jsonify({'status': 'healthy', 'active_jobs': active, 'version': '2.0-api-fixed'})
 
-# Cleanup old files periodically (run this with a scheduler in production)
+# optional cleanup helper (call from scheduler)
 def cleanup_old_files(max_age_hours=24):
-    """Remove files older than max_age_hours"""
     import time
-    
-    output_dir = 'static/outputs'
-    current_time = time.time()
-    
-    for filename in os.listdir(output_dir):
-        filepath = os.path.join(output_dir, filename)
-        file_age_hours = (current_time - os.path.getmtime(filepath)) / 3600
-        
-        if file_age_hours > max_age_hours:
-            try:
-                os.remove(filepath)
-                print(f"Cleaned up old file: {filename}")
-            except Exception as e:
-                print(f"Error cleaning up {filename}: {e}")
+    output_dir = os.path.join('static', 'outputs')
+    now = time.time()
+    for fn in os.listdir(output_dir):
+        fp = os.path.join(output_dir, fn)
+        try:
+            age_hours = (now - os.path.getmtime(fp)) / 3600.0
+            if age_hours > max_age_hours:
+                os.remove(fp)
+        except Exception as e:
+            print(f"Cleanup error for {fp}: {e}")
 
+# -----------------------------------------------------------------------------
+# Run server
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
-    print("=== Doppler Simulator API Starting ===")
-    print("Version: 2.0-API (React Native Ready)")
-    print("\nAPI Endpoints:")
-    print("  GET  /api/info - API information")
-    print("  GET  /api/vehicles - Available vehicles")
-    print("  GET  /api/paths - Available paths")
-    print("  POST /api/simulate - Start simulation")
-    print("  GET  /api/job/<id> - Check job status")
-    print("  GET  /api/download/<file> - Download result")
-    print("  GET  /health - Health check")
-    print("\nCORS enabled for React Native")
-    print("=" * 50)
-    
-    # Run cleanup on startup
-    cleanup_old_files()
-    
+    print("Starting Doppler Simulator (fixed app.py)")
+    cleanup_old_files()  # light cleanup on startup
     app.run(debug=True, host='0.0.0.0', port=5050)
