@@ -667,9 +667,9 @@ Contributions welcome! Areas for improvement:
 
 This project is part of research at Carnegie Mellon University's Language Technologies Institute under Professor Bhiksha Raj.
 
-## Author
+## Authors
 
-**Rohith**  
+**Rohith Arumugam Suresh, Seetharam Killivalavan**  
 Computer Science and Engineering  
 Sri Sivasubramaniya Nadar College of Engineering  
 Research Intern, Carnegie Mellon University LTI
@@ -677,7 +677,7 @@ Research Intern, Carnegie Mellon University LTI
 ## Acknowledgments
 
 - Carnegie Mellon University, Language Technologies Institute
-- Professor Bhiksha Raj for research guidance
+- Professor Bhiksha Raj and Bradley Warren for research guidance
 - Acoustic physics based on classical Doppler effect theory
 - Audio processing built on librosa and scipy libraries
 
